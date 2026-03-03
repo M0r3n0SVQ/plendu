@@ -35,11 +35,16 @@ export default function PWAInstall() {
 
   const install = async () => {
     if (!prompt) return
-    await prompt.prompt()
-    const { outcome } = await prompt.userChoice
-    if (outcome === 'accepted') {
+    try {
+      await prompt.prompt()
+      const { outcome } = await prompt.userChoice
+      if (outcome === 'accepted') {
+        setVisible(false)
+        setPrompt(null)
+      }
+    } catch {
+      // Prompt dismissed or unavailable — hide banner
       setVisible(false)
-      setPrompt(null)
     }
   }
 
