@@ -24,6 +24,50 @@ function fileToBase64(file) {
   })
 }
 
+// Generate a compact base64 thumbnail using canvas (survives page reloads)
+function generateThumbnail(blobUrl, maxSize = 120) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const scale = Math.min(maxSize / img.naturalWidth, maxSize / img.naturalHeight, 1)
+        const w = Math.max(1, Math.round(img.naturalWidth * scale))
+        const h = Math.max(1, Math.round(img.naturalHeight * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+        resolve(canvas.toDataURL('image/jpeg', 0.65))
+      } catch {
+        resolve(null)
+      }
+    }
+    img.onerror = () => resolve(null)
+    img.src = blobUrl
+  })
+}
+
+// Clipboard with execCommand fallback for http/restricted contexts
+function copyToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text)
+  }
+  return new Promise((resolve, reject) => {
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none'
+      document.body.appendChild(ta)
+      ta.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(ta)
+      ok ? resolve() : reject(new Error('execCommand failed'))
+    } catch (e) {
+      reject(e)
+    }
+  })
+}
+
 function loadHistorial() {
   try {
     return JSON.parse(localStorage.getItem(HISTORIAL_KEY) || '[]')
@@ -35,20 +79,23 @@ function loadHistorial() {
 function saveHistorial(items) {
   try {
     localStorage.setItem(HISTORIAL_KEY, JSON.stringify(items))
-  } catch {}
+    return true
+  } catch {
+    return false
+  }
 }
 
 /* ─── Toast ──────────────────────────────── */
-function Toast({ message, type, onDone }) {
+function Toast({ message, type, onDone, duration = 3000 }) {
   useEffect(() => {
-    const t = setTimeout(onDone, 3000)
+    const t = setTimeout(onDone, duration)
     return () => clearTimeout(t)
-  }, [onDone])
+  }, [onDone, duration])
   return <div className={`toast ${type}`}>{message}</div>
 }
 
 /* ─── Empty state ────────────────────────── */
-function EmptyPanel({ historial, onSelectHistorial }) {
+function EmptyPanel({ historial, onSelectHistorial, onDeleteHistorial }) {
   if (historial.length === 0) {
     return (
       <div className="col-right-empty">
@@ -67,32 +114,45 @@ function EmptyPanel({ historial, onSelectHistorial }) {
         <span className="historial-title">HISTORIAL</span>
         <span className="historial-count">{historial.length} prendas</span>
       </div>
-      <div className="historial-list">
+      <ul className="historial-list" role="list">
         {historial.map((item) => (
-          <button
-            key={item.id}
-            className="historial-item"
-            onClick={() => onSelectHistorial(item)}
-          >
-            <div className="historial-item-left">
-              {item.thumbnail ? (
-                <img src={item.thumbnail} alt={item.ficha.titulo} className="historial-thumb" />
-              ) : (
-                <div className="historial-thumb-placeholder">◈</div>
-              )}
-              <div className="historial-item-info">
-                <p className="historial-item-titulo">{item.ficha.titulo}</p>
-                <p className="historial-item-meta">
-                  {item.ficha.precio}€
-                  {item.ficha.marca ? ` · ${item.ficha.marca}` : ''}
-                  {item.ficha.talla ? ` · ${item.ficha.talla}` : ''}
-                </p>
+          <li key={item.id} className="historial-item-wrap">
+            <button
+              className="historial-item"
+              onClick={() => onSelectHistorial(item)}
+            >
+              <div className="historial-item-left">
+                {item.thumbnail ? (
+                  <img
+                    src={item.thumbnail}
+                    alt={`Miniatura de ${item.ficha.titulo}`}
+                    className="historial-thumb"
+                  />
+                ) : (
+                  <div className="historial-thumb-placeholder" aria-hidden="true">◈</div>
+                )}
+                <div className="historial-item-info">
+                  <p className="historial-item-titulo">{item.ficha.titulo}</p>
+                  <p className="historial-item-meta">
+                    {item.ficha.precio}€
+                    {item.ficha.marca ? ` · ${item.ficha.marca}` : ''}
+                    {item.ficha.talla ? ` · ${item.ficha.talla}` : ''}
+                  </p>
+                </div>
               </div>
-            </div>
-            <span className="historial-item-date">{item.fecha}</span>
-          </button>
+              <span className="historial-item-date">{item.fecha}</span>
+            </button>
+            <button
+              className="historial-item-delete"
+              onClick={() => onDeleteHistorial(item.id)}
+              aria-label={`Eliminar "${item.ficha.titulo}" del historial`}
+              title="Eliminar"
+            >
+              ✕
+            </button>
+          </li>
         ))}
-      </div>
+      </ul>
     </div>
   )
 }
@@ -145,10 +205,12 @@ function FichaPanel({ ficha, thumbnail, onReset, onVolver, hayHistorial }) {
   const [copiadoTodo, setCopiadoTodo] = useState(false)
 
   const copiar = useCallback((texto, campo) => {
-    navigator.clipboard.writeText(texto).then(() => {
-      setCopiado(campo)
-      setTimeout(() => setCopiado(null), 2000)
-    })
+    copyToClipboard(texto)
+      .then(() => {
+        setCopiado(campo)
+        setTimeout(() => setCopiado(null), 2000)
+      })
+      .catch(() => {}) // silent — browser may block clipboard in some contexts
   }, [])
 
   const copiarTodo = useCallback(() => {
@@ -161,10 +223,13 @@ function FichaPanel({ ficha, thumbnail, onReset, onVolver, hayHistorial }) {
       ficha.marca     ? `MARCA: ${ficha.marca}`         : '',
       ficha.talla     ? `TALLA: ${ficha.talla}`         : '',
     ].filter(Boolean).join('\n')
-    navigator.clipboard.writeText(texto).then(() => {
-      setCopiadoTodo(true)
-      setTimeout(() => setCopiadoTodo(false), 2000)
-    })
+
+    copyToClipboard(texto)
+      .then(() => {
+        setCopiadoTodo(true)
+        setTimeout(() => setCopiadoTodo(false), 2000)
+      })
+      .catch(() => {})
   }, [ficha])
 
   const tags = [
@@ -177,10 +242,9 @@ function FichaPanel({ ficha, thumbnail, onReset, onVolver, hayHistorial }) {
 
   return (
     <div className="ficha">
-      {/* Thumbnail si existe */}
       {thumbnail && (
         <div className="ficha-thumbnail-wrap">
-          <img src={thumbnail} alt="prenda" className="ficha-thumbnail" />
+          <img src={thumbnail} alt="Vista previa de la prenda" className="ficha-thumbnail" />
           <div className="ficha-thumbnail-overlay" />
         </div>
       )}
@@ -206,6 +270,7 @@ function FichaPanel({ ficha, thumbnail, onReset, onVolver, hayHistorial }) {
               <button
                 className={`btn-copy${copiado === key ? ' copied' : ''}`}
                 onClick={() => copiar(value, key)}
+                aria-label={copiado === key ? 'Copiado al portapapeles' : `Copiar ${label.toLowerCase()}`}
               >
                 {copiado === key ? '✓ COPIADO' : 'COPIAR'}
               </button>
@@ -227,6 +292,7 @@ function FichaPanel({ ficha, thumbnail, onReset, onVolver, hayHistorial }) {
       <button
         className={`btn-copy-all${copiadoTodo ? ' copied' : ''}`}
         onClick={copiarTodo}
+        aria-label={copiadoTodo ? 'Todo copiado al portapapeles' : 'Copiar toda la ficha al portapapeles'}
       >
         {copiadoTodo ? '✓ TODO COPIADO' : '⊞ COPIAR TODO'}
       </button>
@@ -284,10 +350,11 @@ export default function ImageUploader() {
     const url = URL.createObjectURL(file)
     try {
       const base64 = await fileToBase64(file)
-      setFotos(prev => ({ ...prev, [key]: { url, base64 } }))
+      setFotos(prev => ({ ...prev, [key]: { url, base64, mime: file.type } }))
       setFicha(null)
       setThumbnail(null)
     } catch {
+      URL.revokeObjectURL(url)
       showToast('No se pudo procesar la imagen.')
     }
   }, [showToast])
@@ -307,9 +374,21 @@ export default function ImageUploader() {
   const handleDrop = useCallback((e, key) => {
     e.preventDefault()
     setDragging(null)
-    const file = e.dataTransfer.files[0]
-    if (file) processFile(file, key)
-  }, [processFile])
+    const files = Array.from(e.dataTransfer.files).filter(f => ALLOWED.includes(f.type))
+    if (files.length === 0) return
+
+    if (files.length === 1) {
+      processFile(files[0], key)
+      return
+    }
+
+    // Multi-file drop: fill the dropped slot first, then empty subsequent slots
+    const order = SLOTS.map(s => s.key)
+    const startIdx = order.indexOf(key)
+    const targets = [key, ...order.slice(startIdx + 1).filter(k => !fotos[k])]
+      .slice(0, files.length)
+    files.slice(0, targets.length).forEach((file, i) => processFile(file, targets[i]))
+  }, [processFile, fotos])
 
   const analizar = useCallback(async () => {
     if (!fotos.principal || cargando) return
@@ -317,56 +396,61 @@ export default function ImageUploader() {
     setFicha(null)
 
     try {
+      const makeFotoPayload = (f) =>
+        f?.base64 ? { data: f.base64, mime: f.mime || 'image/jpeg' } : null
+
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fotos: {
-            principal: fotos.principal?.base64,
-            etiqueta:  fotos.etiqueta?.base64  || null,
-            trasera:   fotos.trasera?.base64   || null,
-            detalle:   fotos.detalle?.base64   || null,
-          }
+            principal: makeFotoPayload(fotos.principal),
+            etiqueta:  makeFotoPayload(fotos.etiqueta),
+            trasera:   makeFotoPayload(fotos.trasera),
+            detalle:   makeFotoPayload(fotos.detalle),
+          },
         }),
       })
 
-      if (!res.ok) {
-        throw new Error(
-          res.status === 429
-            ? 'Demasiadas peticiones. Espera un momento.'
-            : `Error ${res.status}. Inténtalo de nuevo.`
-        )
+      // Always parse JSON — server returns { error } on failure
+      let data
+      try {
+        data = await res.json()
+      } catch {
+        throw new Error(`Error ${res.status}. Inténtalo de nuevo.`)
       }
 
-      const data = await res.json()
-      if (data.error) throw new Error(data.error)
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `Error ${res.status}. Inténtalo de nuevo.`)
+      }
 
-      // Guardar thumbnail en base64 pequeño para historial
-      const thumbUrl = fotos.principal.url
-      setThumbnail(thumbUrl)
+      // Generate a persistent base64 thumbnail for localStorage
+      const thumbBase64 = await generateThumbnail(fotos.principal.url)
+
+      setThumbnail(fotos.principal.url) // blob URL for immediate crisp display
       setFicha(data)
 
-      // Guardar en historial
       const now = new Date()
       const fecha = now.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
       const entrada = {
         id: Date.now(),
         fecha,
         ficha: data,
-        thumbnail: fotos.principal.url,
+        thumbnail: thumbBase64, // base64 — persists across reloads
       }
-      setHistorial(prev => {
-        const nuevo = [entrada, ...prev].slice(0, MAX_HISTORIAL)
-        saveHistorial(nuevo)
-        return nuevo
-      })
+
+      const nuevo = [entrada, ...historial].slice(0, MAX_HISTORIAL)
+      setHistorial(nuevo)
+      if (!saveHistorial(nuevo)) {
+        showToast('No se pudo guardar en historial.', 'error')
+      }
 
     } catch (err) {
       showToast(err.message || 'Error inesperado.')
     } finally {
       setCargando(false)
     }
-  }, [fotos, cargando, showToast])
+  }, [fotos, cargando, historial, showToast])
 
   const reset = useCallback(() => {
     Object.values(fotos).forEach(f => f?.url && URL.revokeObjectURL(f.url))
@@ -382,8 +466,14 @@ export default function ImageUploader() {
 
   const selectHistorial = useCallback((item) => {
     setFicha(item.ficha)
-    setThumbnail(item.thumbnail)
+    setThumbnail(item.thumbnail) // base64 data URL — valid after reload
   }, [])
+
+  const deleteHistorial = useCallback((id) => {
+    const nuevo = historial.filter(item => item.id !== id)
+    setHistorial(nuevo)
+    saveHistorial(nuevo)
+  }, [historial])
 
   const rightPanel = () => {
     if (cargando) return <SkeletonPanel />
@@ -400,6 +490,7 @@ export default function ImageUploader() {
       <EmptyPanel
         historial={historial}
         onSelectHistorial={selectHistorial}
+        onDeleteHistorial={deleteHistorial}
       />
     )
   }
@@ -410,6 +501,7 @@ export default function ImageUploader() {
         <Toast
           message={toast.message}
           type={toast.type}
+          duration={toast.type === 'error' ? 5000 : 3000}
           onDone={() => setToast(null)}
         />
       )}
@@ -442,7 +534,7 @@ export default function ImageUploader() {
                   <>
                     <img
                       src={fotos[key].url}
-                      alt={label}
+                      alt={`Foto ${label.toLowerCase()} de la prenda`}
                       className="foto-preview"
                       style={{ animation: 'fotoEnter 0.25s cubic-bezier(0.16,1,0.3,1)' }}
                     />
@@ -452,7 +544,7 @@ export default function ImageUploader() {
                   </>
                 ) : (
                   <>
-                    <span className="foto-icon">{icon}</span>
+                    <span className="foto-icon" aria-hidden="true">{icon}</span>
                     <span className="foto-label">{label}</span>
                     <span className="foto-sub">{hint}</span>
                     {required && <span className="foto-required-badge">OBLIGATORIA</span>}
@@ -475,15 +567,16 @@ export default function ImageUploader() {
             onClick={analizar}
             disabled={cargando}
             aria-busy={cargando}
+            aria-label={cargando ? 'Analizando prenda, por favor espera' : 'Generar ficha para Vinted'}
           >
             {cargando ? (
               <>
-                <span className="spinner" />
+                <span className="spinner" aria-hidden="true" />
                 ANALIZANDO PRENDA...
               </>
             ) : (
               <>
-                <span>→</span>
+                <span aria-hidden="true">→</span>
                 {numFotos === 4 ? 'GENERAR FICHA COMPLETA' : 'GENERAR FICHA'}
               </>
             )}
