@@ -98,7 +98,7 @@ function Toast({ message, type, onDone, duration = 3000 }) {
 function EmptyPanel({ historial, onSelectHistorial, onDeleteHistorial }) {
   if (historial.length === 0) {
     return (
-      <div className="col-right-empty">
+      <div className="col-right-empty no-historial">
         <div className="col-right-empty-icon">◈</div>
         <p className="col-right-empty-title">Tu ficha aparecerá aquí</p>
         <p className="col-right-empty-sub">
@@ -276,6 +276,11 @@ function FichaPanel({ ficha, thumbnail, onReset, onVolver, hayHistorial }) {
               </button>
             </div>
             <p className="ficha-field-value">{value}</p>
+            {key === 'titulo' && (
+              <p className={`ficha-char-count${value.length > 50 ? ' over' : ''}`}>
+                {value.length}/50 caracteres{value.length > 50 ? ' — demasiado largo' : ''}
+              </p>
+            )}
           </div>
           <div className="ficha-divider" />
         </div>
@@ -395,6 +400,12 @@ export default function ImageUploader() {
     setCargando(true)
     setFicha(null)
 
+    // On mobile: immediately scroll to result column so user sees the skeleton
+    if (window.innerWidth <= 860) {
+      const el = document.getElementById('resultado-col')
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+
     try {
       const makeFotoPayload = (f) =>
         f?.base64 ? { data: f.base64, mime: f.mime || 'image/jpeg' } : null
@@ -506,7 +517,7 @@ export default function ImageUploader() {
         />
       )}
 
-      <div className="uploader">
+      <div className={`uploader${cargando ? ' uploader-cargando' : ''}`}>
         <div className="foto-count">
           <span className="foto-count-label">FOTOS AÑADIDAS</span>
           <span className="foto-count-num">{numFotos} / 4</span>
