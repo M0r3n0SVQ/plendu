@@ -1,0 +1,25 @@
+{
+  "name": "Plendu",
+  "short_name": "Plendu",
+  "description": "Fichas para Vinted en segundos con IA",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#080808",
+  "theme_color": "#080808",
+  "orientation": "portrait-primary",
+  "categories": ["productivity", "shopping"],
+  "icons": [
+    {
+      "src": "/api/pwa-icon?size=192",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/api/pwa-icon?size=512",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
