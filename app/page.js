@@ -1,9 +1,8 @@
-'use client'
-
-import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import ImageUploader from './components/ImageUploader'
 import OnboardingModal from './components/OnboardingModal'
 import PWAInstall from './components/PWAInstall'
+import ThemeToggle from './components/ThemeToggle'
 
 const STATS = [
   { num: '< 10s', label: 'POR ANÁLISIS' },
@@ -12,50 +11,37 @@ const STATS = [
 ]
 
 export default function Home() {
-  const [theme, setTheme] = useState('dark')
-
-  useEffect(() => {
-    // Leer el tema que ya aplicó el script inline
-    const current = document.documentElement.getAttribute('data-theme') || 'dark'
-    setTheme(current)
-  }, [])
-
-  const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark'
-    setTheme(next)
-    document.documentElement.setAttribute('data-theme', next)
-    localStorage.setItem('plendu_theme', next)
-  }
-
   return (
     <div className="page">
+      {/* Accessibility: jump to main content */}
+      <a href="#main-content" className="skip-link">
+        Saltar al contenido
+      </a>
+
       <OnboardingModal />
       <PWAInstall />
 
-      <div className="orb orb-1" />
-      <div className="orb orb-2" />
+      <div className="orb orb-1" aria-hidden="true" />
+      <div className="orb orb-2" aria-hidden="true" />
 
       <header className="header">
-        <div className="logo">
+        <div className="logo" aria-label="Plendu">
           Plendu
-          <span className="logo-dot" />
+          <span className="logo-dot" aria-hidden="true" />
         </div>
         <div className="header-right">
-          <button
-            className="theme-toggle"
-            onClick={toggleTheme}
-            aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-            title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}
-          >
-            {theme === 'dark' ? '☀' : '☾'}
-          </button>
-          <span className="beta-tag">BETA</span>
+          <ThemeToggle />
+          <span className="beta-tag" aria-label="Versión beta">BETA</span>
         </div>
       </header>
 
-      <main className="main">
-        <div className="col-left">
-          <p className="eyebrow">
+      <main
+        className="main"
+        id="main-content"
+        aria-label="Generador de fichas para Vinted"
+      >
+        <section className="col-left" aria-label="Subir fotos y generar ficha">
+          <p className="eyebrow" aria-hidden="true">
             <span className="eyebrow-line" />
             IA PARA VINTED
           </p>
@@ -70,7 +56,7 @@ export default function Home() {
             descripción, precio y categoría perfectos para Vinted.
           </p>
 
-          <div className="stats">
+          <div className="stats" aria-label="Estadísticas del servicio">
             {STATS.map(({ num, label }) => (
               <div key={label} className="stat">
                 <p className="stat-num">{num}</p>
@@ -80,14 +66,23 @@ export default function Home() {
           </div>
 
           <ImageUploader />
-        </div>
+        </section>
 
-        <div className="col-right" id="resultado-col" />
+        <aside
+          className="col-right"
+          id="resultado-col"
+          aria-label="Ficha generada"
+          aria-live="polite"
+        />
       </main>
 
       <footer className="footer">
         <span className="footer-logo">Plendu</span>
-        <span>Hecho para vendedores reales · 2026</span>
+        <span>
+          Hecho para vendedores reales · 2026
+          {' · '}
+          <Link href="/privacidad" className="footer-link">Privacidad</Link>
+        </span>
       </footer>
     </div>
   )
