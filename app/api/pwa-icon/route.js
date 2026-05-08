@@ -10,7 +10,7 @@ export function GET(request) {
   const pad = Math.round(size * 0.1)
   const inner = size - pad * 2
 
-  return new ImageResponse(
+  const imageResponse = new ImageResponse(
     (
       <div
         style={{
@@ -51,4 +51,7 @@ export function GET(request) {
     ),
     { width: size, height: size }
   )
+  // Cache icon for 1 year — content only changes on code deploy
+  imageResponse.headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+  return imageResponse
 }

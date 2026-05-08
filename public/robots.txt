@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://plendu.app/sitemap.xml

@@ -12,25 +12,37 @@ export default function PWAInstall() {
     if (window.matchMedia('(display-mode: standalone)').matches) return
     if (window.navigator.standalone) return
 
-    // Dismissed this session
-    if (sessionStorage.getItem('pwa-dismissed')) return
+    // Dismissed recently (30-day cooldown)
+    const dismissed = localStorage.getItem('pwa-dismissed')
+    if (dismissed && Date.now() - parseInt(dismissed, 10) < 30 * 24 * 60 * 60 * 1000) return
 
-    // iOS Safari: no beforeinstallprompt, show manual instructions
-    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream
+    // New users see the onboarding modal first — delay the banner so both
+    // don't compete for attention on the very first visit
+    const isNewUser = !localStorage.getItem('plendu_onboarded')
+    const delay = isNewUser ? 8000 : 1000
+
+    // iOS Safari: no beforeinstallprompt, show manual instructions.
+    // iPadOS 13+ reports as Mac — detect via touch points fallback.
+    const ua = navigator.userAgent
+    const isIpadOS = /Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1
+    const ios = (/iphone|ipad|ipod/i.test(ua) || isIpadOS) && !window.MSStream
     if (ios) {
-      setIsIOS(true)
-      setVisible(true)
-      return
+      const t = setTimeout(() => { setIsIOS(true); setVisible(true) }, delay)
+      return () => clearTimeout(t)
     }
 
     // Chrome / Edge: native install prompt
+    let timeoutId
     const handler = (e) => {
       e.preventDefault()
       setPrompt(e)
-      setVisible(true)
+      timeoutId = setTimeout(() => setVisible(true), delay)
     }
     window.addEventListener('beforeinstallprompt', handler)
-    return () => window.removeEventListener('beforeinstallprompt', handler)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler)
+      clearTimeout(timeoutId)
+    }
   }, [])
 
   const install = async () => {
@@ -50,13 +62,13 @@ export default function PWAInstall() {
 
   const dismiss = () => {
     setVisible(false)
-    sessionStorage.setItem('pwa-dismissed', '1')
+    localStorage.setItem('pwa-dismissed', Date.now().toString())
   }
 
   if (!visible) return null
 
   return (
-    <div className="pwa-banner" role="banner" aria-label="Instalar aplicación">
+    <div className="pwa-banner" role="complementary" aria-label="Instalar aplicación">
       <div className="pwa-banner-icon" aria-hidden="true">
         {isIOS ? '⬆' : '⊕'}
       </div>

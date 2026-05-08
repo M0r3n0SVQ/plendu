@@ -1,17 +1,29 @@
 {
+  "id": "/",
   "name": "Plendu",
   "short_name": "Plendu",
-  "description": "Fichas para Vinted en segundos con IA",
+  "description": "Genera fichas perfectas para Vinted en segundos con IA. Sube hasta 4 fotos y obtén título, descripción, precio, categoría, estado, marca y talla.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
   "background_color": "#080808",
   "theme_color": "#080808",
-  "orientation": "portrait-primary",
+  "lang": "es",
+  "dir": "ltr",
+  "orientation": "any",
+  "prefer_related_applications": false,
   "categories": ["productivity", "shopping"],
   "icons": [
     {
       "src": "/api/pwa-icon?size=192",
       "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/api/pwa-icon?size=512",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
