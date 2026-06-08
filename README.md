@@ -57,9 +57,20 @@ El `Dockerfile` es multi-stage y usa el output `standalone` de Next.
 
 1. **Fork / clona** este repo en tu cuenta de GitHub.
 2. En [vercel.com/new](https://vercel.com/new), importa el repositorio.
-3. **Variables de entorno** — añade en *Project Settings → Environment Variables*:
-   - `OPENAI_API_KEY` → tu key de OpenAI (production + preview + development).
+3. **Variables de entorno** — añade en *Project Settings → Environment Variables* (production + preview + development):
+   - `OPENAI_API_KEY` → tu key de OpenAI.
+   - `UPSTASH_REDIS_REST_URL` y `UPSTASH_REDIS_REST_TOKEN` → para rate limit distribuido (ver siguiente sección).
 4. **Deploy.** Vercel detecta Next.js automáticamente; no hace falta tocar el comando de build.
+
+### Rate limit con Upstash Redis
+
+El endpoint `/api/analyze` aplica un sliding window de **10 req/min por IP**. Sin Upstash, cae a un limitador en memoria por instancia — bypaseable en serverless. Con Upstash:
+
+1. Crea una BD Redis gratis en [console.upstash.com](https://console.upstash.com), región `eu-west-1`.
+2. Copia el `UPSTASH_REDIS_REST_URL` y `UPSTASH_REDIS_REST_TOKEN`.
+3. Pégalas en Vercel como vars de entorno.
+
+Si Upstash falla (timeout/caída), el endpoint *falla abierto* (deja pasar la petición) en lugar de bloquear usuarios legítimos por un problema de infra.
 
 El repo incluye un `vercel.json` que:
 
@@ -118,7 +129,7 @@ Mejoras propuestas, ordenadas por impacto y esfuerzo. Pensadas para irse aplican
 
 ### Corto plazo — antes de promocionarlo en serio
 
-- [ ] **Rate limit distribuido** con [Upstash Redis](https://upstash.com/) o `@vercel/kv`. El actual es por instancia: en serverless se evade con cold-starts.
+- [x] ~~**Rate limit distribuido** con [Upstash Redis](https://upstash.com/).~~ ✅ Hecho — sliding window 10 req/min/IP, fail-open ante caídas de Upstash.
 - [ ] **Analítica privada** — Vercel Analytics o Plausible. Sin cookies, sin GDPR cookie banner.
 - [ ] **Monitoring de errores** — Sentry gratuito hasta 5k eventos/mes. Captura los 502 de OpenAI y los errores de validación de la IA.
 - [ ] **Tests** — al menos del endpoint `/api/analyze` (validación de payload, sanitización) con Vitest + supertest. Y un E2E feliz con Playwright.
