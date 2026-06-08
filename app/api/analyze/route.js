@@ -1,5 +1,11 @@
 import OpenAI from 'openai'
 
+// Vercel: pin to Node runtime (OpenAI SDK + large bodies),
+// allow up to 60s for vision inference, force per-request execution.
+export const runtime  = 'nodejs'
+export const maxDuration = 60
+export const dynamic  = 'force-dynamic'
+
 // Guard: fail fast at cold-start if key is missing
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -36,7 +42,8 @@ function isRateLimited(ip) {
 
 // ─── Validation constants ─────────────────────────────────────────────────────
 const ALLOWED_MIMES  = new Set(['image/jpeg', 'image/png', 'image/webp'])
-const MAX_BASE64_LEN = 7 * 1024 * 1024   // ~5 MB file in base64 ≈ 6.8 MB chars
+// 7 MB of base64 chars ≈ 5.25 MB of binary (base64 = 4/3 overhead)
+const MAX_BASE64_LEN = 7 * 1024 * 1024
 const MAX_BODY_BYTES = 30 * 1024 * 1024  // 30 MB hard cap for 4 images combined
 
 // Validate base64 format and size
@@ -215,7 +222,7 @@ Responde SOLO con JSON válido: {"_analisis":"","titulo":"","descripcion":"","pr
           ],
         },
       ],
-      max_tokens: 600,
+      max_tokens: 800,
     })
 
     const content = response.choices[0]?.message?.content

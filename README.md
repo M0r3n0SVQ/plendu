@@ -1,36 +1,173 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Plendu
 
-## Getting Started
+> Genera fichas perfectas para Vinted en segundos a partir de fotos.
 
-First, run the development server:
+Plendu es una webapp gratuita que analiza hasta 4 fotos de una prenda con IA y devuelve el **título**, **descripción**, **precio sugerido**, **categoría**, **estado**, **marca** y **talla** listos para publicar en Vinted España.
+
+- Sin registro, sin tracking, sin backend de usuarios.
+- Las fotos se procesan en cliente (resize + JPEG q=0.82) y se envían a la API de OpenAI **solo durante el análisis**: no se guardan.
+- El historial de las últimas 10 fichas vive en `localStorage` del navegador.
+- PWA instalable, soporte offline básico (página de fallback), tema claro/oscuro.
+
+## Stack
+
+- **Next.js 16** (App Router, standalone output)
+- **React 19**
+- **Tailwind v4** + CSS plano para el resto
+- **OpenAI** `gpt-4o-mini` (visión)
+- **Service Worker** propio para offline + cache de fuentes
+
+---
+
+## Desarrollo local
+
+Requisitos: Node 22+, npm 10+.
 
 ```bash
+git clone https://github.com/M0r3n0SVQ/plendu.git
+cd plendu
+cp .env.example .env.local
+# edita .env.local y pon tu OPENAI_API_KEY
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abre [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+### Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Comando         | Qué hace                              |
+| --------------- | ------------------------------------- |
+| `npm run dev`   | Servidor de desarrollo con HMR        |
+| `npm run build` | Build de producción (standalone)      |
+| `npm run start` | Sirve el build de producción          |
+| `npm run lint`  | ESLint sobre todo el código           |
 
-## Learn More
+### Docker
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+docker compose up --build
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+El `Dockerfile` es multi-stage y usa el output `standalone` de Next.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## Despliegue en Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. **Fork / clona** este repo en tu cuenta de GitHub.
+2. En [vercel.com/new](https://vercel.com/new), importa el repositorio.
+3. **Variables de entorno** — añade en *Project Settings → Environment Variables*:
+   - `OPENAI_API_KEY` → tu key de OpenAI (production + preview + development).
+4. **Deploy.** Vercel detecta Next.js automáticamente; no hace falta tocar el comando de build.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+El repo incluye un `vercel.json` que:
+
+- Despliega en la región `cdg1` (París) — la más cercana a usuarios en España.
+- Sube `maxDuration` de la función `/api/analyze` a **60 s** (la visión puede tardar 10-30 s en cargas altas).
+- Asigna **1024 MB de memoria** a esa función.
+
+> ⚠️ **Plan Hobby de Vercel:** `maxDuration` máximo es 60 s y los límites de invocaciones son generosos pero finitos. Si esperas tráfico alto, plantéate el plan Pro o un rate limit distribuido (ver roadmap).
+
+### Dominio personalizado
+
+Apunta tu dominio en Vercel (*Project → Domains*). El `metadataBase` y los enlaces canónicos están en `app/layout.js` apuntando a `https://plendu.app` — cámbialo si despliegas en otro dominio.
+
+---
+
+## Arquitectura rápida
+
+```
+app/
+├─ api/
+│  ├─ analyze/route.js     ← POST: recibe 1-4 fotos en base64, devuelve la ficha
+│  └─ pwa-icon/route.js    ← Genera el icono PWA dinámico
+├─ components/
+│  ├─ ImageUploader.js     ← Subida, compresión, llamada API, panel resultado, historial
+│  ├─ OnboardingModal.js   ← Modal de bienvenida (primera visita)
+│  ├─ PWAInstall.js        ← Prompt "Añadir a pantalla de inicio"
+│  └─ ThemeToggle.js       ← Selector claro / oscuro
+├─ privacidad/page.js      ← Política de privacidad
+├─ layout.js               ← Metadata, JSON-LD, registro SW, theme inline
+├─ page.js                 ← Landing
+├─ error.js / global-error.js / not-found.js
+├─ icon.js                 ← Favicon dinámico
+├─ opengraph-image.js      ← OG image dinámica
+└─ sitemap.js
+public/
+├─ manifest.json           ← Manifest PWA
+├─ sw.js                   ← Service Worker (offline + cache fuentes)
+└─ robots.txt
+```
+
+### Defensas ya implementadas en `/api/analyze`
+
+- Rate limit por IP en memoria (10 req/min).
+- Validación estricta de `Content-Length` (411/413).
+- Whitelist de MIMEs (`jpeg`/`png`/`webp`).
+- Validación de la cadena base64 con regex.
+- Sanitización de cada campo del JSON antes de devolverlo al cliente.
+- `Cache-Control: no-store` en la respuesta.
+- Cabeceras de seguridad globales en `next.config.mjs` (CSP estricta, HSTS, COOP, Permissions-Policy, etc.).
+
+---
+
+## Roadmap
+
+Mejoras propuestas, ordenadas por impacto y esfuerzo. Pensadas para irse aplicando poco a poco según crezca el uso.
+
+### Corto plazo — antes de promocionarlo en serio
+
+- [ ] **Rate limit distribuido** con [Upstash Redis](https://upstash.com/) o `@vercel/kv`. El actual es por instancia: en serverless se evade con cold-starts.
+- [ ] **Analítica privada** — Vercel Analytics o Plausible. Sin cookies, sin GDPR cookie banner.
+- [ ] **Monitoring de errores** — Sentry gratuito hasta 5k eventos/mes. Captura los 502 de OpenAI y los errores de validación de la IA.
+- [ ] **Tests** — al menos del endpoint `/api/analyze` (validación de payload, sanitización) con Vitest + supertest. Y un E2E feliz con Playwright.
+- [ ] **CI** — GitHub Actions que corra `lint` + `build` + tests en cada PR.
+- [ ] **Logo / favicon de marca** — actualmente el icono se genera dinámicamente con una "P" tipográfica. Mejor un SVG curado.
+
+### Medio plazo — escalar y monetizar
+
+- [ ] **Cuenta de usuario opcional** (NextAuth con Google/email magic link) para sincronizar el historial entre dispositivos.
+- [ ] **Persistencia del historial** en Postgres (Vercel Postgres / Neon / Supabase) cuando hay cuenta.
+- [ ] **Cuota por usuario / IP** (p.ej. 5 fichas/día gratis, ilimitado con cuenta verificada o pago).
+- [ ] **Pasarela de pago** — Stripe con un plan "Plendu Pro" (~3 €/mes) que quite cuota y dé:
+  - Mejor modelo (`gpt-4o` o `claude-sonnet-4-6` para descripciones más finas).
+  - Historial ilimitado en la nube.
+  - Exportar a CSV.
+- [ ] **A/B test del prompt** — variar pequeños bloques del prompt y medir el % de fichas no editadas por el usuario antes de copiar (proxy de calidad).
+- [ ] **Mejor modelo de visión opcional** — probar `claude-sonnet-4-6` con imágenes; suele describir materiales y defectos mejor que `gpt-4o-mini`.
+- [ ] **Detección de defectos visuales** — segundo pase enfocado solo en buscar manchas, pilling, descosidos. Ayuda a justificar el "Estado".
+- [ ] **i18n** — empezar por Vinted FR/IT/DE/PT, que son los mercados grandes. Implica adaptar precios y categorías por país.
+
+### Largo plazo — producto serio
+
+- [ ] **Integración directa con Vinted** — vía su API o (si no la abren) extensión de navegador que rellene el formulario por ti.
+- [ ] **Multi-prenda en lote** — sube fotos de 10 prendas mezcladas, el sistema las agrupa y genera 10 fichas.
+- [ ] **Aprendizaje del usuario** — recordar el estilo de descripción que más copia (más / menos emojis, más / menos técnico).
+- [ ] **Sugerencia de precio dinámica** — scraping ético de búsquedas Vinted similares para afinar el precio en lugar de usar tabla estática.
+- [ ] **App móvil nativa** — la PWA ya da el 80 %, pero una nativa permitiría cámara nativa, share extension de iOS, etc.
+- [ ] **Marketplace de plantillas de descripción** — los vendedores comparten plantillas favoritas, otros las usan.
+
+### Higiene técnica continua
+
+- [ ] **TypeScript** — la base es pequeña, migración manejable. Empezar por `app/api/` y los componentes con más estado.
+- [ ] **Refactor del aside vacío** en `page.js` → mover el panel derecho a estado React puro en lugar de portal sobre un `aside` SSR vacío.
+- [ ] **Tipar la respuesta de la IA con Zod** en el server, en lugar del check manual de strings/numbers.
+- [ ] **Reducir el bundle** — `ImageUploader.js` son 1178 líneas; partir en sub-componentes (`<FichaPanel>`, `<EmptyPanel>`, `<SkeletonPanel>`, `<Toast>` ya están separados internamente pero podrían ir en archivos propios).
+
+---
+
+## Privacidad
+
+Las fotos:
+- Se redimensionan y comprimen **en tu navegador** antes de salir.
+- Solo se envían a `/api/analyze`, que las reenvía a OpenAI **una sola vez** y descarta la respuesta.
+- No se guardan en ningún servidor de Plendu (no hay base de datos).
+
+El historial y el tema viven en `localStorage` de tu navegador. Borra los datos del sitio para eliminarlos.
+
+Detalles completos en `/privacidad`.
+
+## Licencia
+
+Sin licencia pública por ahora — todos los derechos reservados. Abrir un issue si te interesa contribuir.
