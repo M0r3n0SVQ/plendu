@@ -6,8 +6,10 @@ export default function ThemeToggle() {
   const [theme, setTheme] = useState('dark')
 
   useEffect(() => {
-    // Read the theme already applied by the inline script in layout.js
+    // Read the theme already applied by the inline script in layout.js.
+    // One-shot sync from DOM → state on mount; no external system to subscribe to.
     const current = document.documentElement.getAttribute('data-theme') || 'dark'
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTheme(current)
   }, [])
 

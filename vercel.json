@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["cdg1"],
+  "functions": {
+    "app/api/analyze/route.js": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  }
+}
