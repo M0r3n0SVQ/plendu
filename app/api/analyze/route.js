@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import * as Sentry from '@sentry/nextjs'
 import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
 
@@ -312,6 +313,13 @@ Responde SOLO con JSON válido: {"_analisis":"","titulo":"","descripcion":"","pr
       err.status === 429 ? 'Demasiadas peticiones. Espera un momento.' :
       err.status === 401 ? 'Clave de API inválida. Contacta con soporte.' :
       'Error al analizar la prenda. Inténtalo de nuevo.'
+
+    // Only surface unexpected errors to Sentry. 429/401 are upstream signals
+    // that we already handle by design — they'd just be noise.
+    if (status === 500) {
+      Sentry.captureException(err, { tags: { route: 'api/analyze' } })
+    }
+
     return Response.json({ error: message }, { status })
   }
 }

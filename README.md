@@ -59,7 +59,8 @@ El `Dockerfile` es multi-stage y usa el output `standalone` de Next.
 2. En [vercel.com/new](https://vercel.com/new), importa el repositorio.
 3. **Variables de entorno** — añade en *Project Settings → Environment Variables* (production + preview + development):
    - `OPENAI_API_KEY` → tu key de OpenAI.
-   - `UPSTASH_REDIS_REST_URL` y `UPSTASH_REDIS_REST_TOKEN` → para rate limit distribuido (ver siguiente sección).
+   - `UPSTASH_REDIS_REST_URL` y `UPSTASH_REDIS_REST_TOKEN` → para rate limit distribuido (ver más abajo).
+   - `NEXT_PUBLIC_SENTRY_DSN` *(opcional)* → para captura de errores (ver más abajo).
 4. **Deploy.** Vercel detecta Next.js automáticamente; no hace falta tocar el comando de build.
 
 ### Rate limit con Upstash Redis
@@ -71,6 +72,18 @@ El endpoint `/api/analyze` aplica un sliding window de **10 req/min por IP**. Si
 3. Pégalas en Vercel como vars de entorno.
 
 Si Upstash falla (timeout/caída), el endpoint *falla abierto* (deja pasar la petición) en lugar de bloquear usuarios legítimos por un problema de infra.
+
+### Monitoring de errores con Sentry
+
+Errores 500 de `/api/analyze` y errores de cliente se mandan a Sentry — útiles para detectar JSON roto de OpenAI, hydration mismatches o regresiones antes de que los reporte un usuario.
+
+1. Crea un proyecto Next.js en [sentry.io](https://sentry.io) (plan free).
+2. Copia el DSN desde *Settings → Client Keys (DSN)*.
+3. Añade `NEXT_PUBLIC_SENTRY_DSN` en Vercel.
+
+Sin esa variable Sentry no hace nada — la app se comporta igual. Los 429 (rate limit) y 401 (auth) **no** se mandan a Sentry: son señales esperadas, solo serían ruido.
+
+Para sourcemaps (mejor stack trace): añade también `SENTRY_ORG`, `SENTRY_PROJECT` y `SENTRY_AUTH_TOKEN`.
 
 El repo incluye un `vercel.json` que:
 
@@ -131,7 +144,7 @@ Mejoras propuestas, ordenadas por impacto y esfuerzo. Pensadas para irse aplican
 
 - [x] ~~**Rate limit distribuido** con [Upstash Redis](https://upstash.com/).~~ ✅ Hecho — sliding window 10 req/min/IP, fail-open ante caídas de Upstash.
 - [ ] **Analítica privada** — Vercel Analytics o Plausible. Sin cookies, sin GDPR cookie banner.
-- [ ] **Monitoring de errores** — Sentry gratuito hasta 5k eventos/mes. Captura los 502 de OpenAI y los errores de validación de la IA.
+- [x] ~~**Monitoring de errores** — Sentry gratuito hasta 5k eventos/mes.~~ ✅ Hecho — captura errores 500 de la API y de cliente, no-ops sin DSN configurado.
 - [ ] **Tests** — al menos del endpoint `/api/analyze` (validación de payload, sanitización) con Vitest + supertest. Y un E2E feliz con Playwright.
 - [ ] **CI** — GitHub Actions que corra `lint` + `build` + tests en cada PR.
 - [ ] **Logo / favicon de marca** — actualmente el icono se genera dinámicamente con una "P" tipográfica. Mejor un SVG curado.

@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 
+import { withSentryConfig } from '@sentry/nextjs'
+
 const securityHeaders = [
   // Prevent clickjacking
   { key: 'X-Frame-Options', value: 'DENY' },
@@ -53,8 +55,9 @@ const securityHeaders = [
       "font-src 'self' https://fonts.gstatic.com",
       // data: for base64 thumbnails stored in localStorage; blob: for object URLs
       "img-src 'self' data: blob:",
-      // API calls go to our own server only; OpenAI is called server-side
-      "connect-src 'self'",
+      // API calls: own server + Sentry ingest (errors) + Vercel insights.
+      // OpenAI is called server-side, never from the browser.
+      "connect-src 'self' https://*.ingest.sentry.io https://*.sentry.io",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -74,4 +77,15 @@ const nextConfig = {
   },
 }
 
-export default nextConfig
+// Sentry wrapper — only mutates the build when SENTRY_AUTH_TOKEN is present
+// (uploads sourcemaps). Without it, build behaves normally.
+export default withSentryConfig(nextConfig, {
+  org:     process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  silent:  !process.env.CI,
+  // Hide sourcemaps from public access — we still upload them to Sentry.
+  hideSourceMaps:    true,
+  disableLogger:     true,
+  // Don't fail the build if sourcemap upload fails (e.g. token missing).
+  errorHandler: () => {},
+})
