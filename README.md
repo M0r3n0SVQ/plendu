@@ -1,5 +1,7 @@
 # Plendu
 
+[![CI](https://github.com/M0r3n0SVQ/plendu/actions/workflows/ci.yml/badge.svg)](https://github.com/M0r3n0SVQ/plendu/actions/workflows/ci.yml)
+
 > Genera fichas perfectas para Vinted en segundos a partir de fotos.
 
 Plendu es una webapp gratuita que analiza hasta 4 fotos de una prenda con IA y devuelve el **título**, **descripción**, **precio sugerido**, **categoría**, **estado**, **marca** y **talla** listos para publicar en Vinted España.
@@ -146,7 +148,7 @@ Mejoras propuestas, ordenadas por impacto y esfuerzo. Pensadas para irse aplican
 - [ ] **Analítica privada** — Vercel Analytics o Plausible. Sin cookies, sin GDPR cookie banner.
 - [x] ~~**Monitoring de errores** — Sentry gratuito hasta 5k eventos/mes.~~ ✅ Hecho — captura errores 500 de la API y de cliente, no-ops sin DSN configurado.
 - [ ] **Tests** — al menos del endpoint `/api/analyze` (validación de payload, sanitización) con Vitest + supertest. Y un E2E feliz con Playwright.
-- [ ] **CI** — GitHub Actions que corra `lint` + `build` + tests en cada PR.
+- [x] ~~**CI** — GitHub Actions que corra `lint` + `build` + tests en cada PR.~~ ✅ Hecho — `lint` + `build` en cada PR y push a master. Falta añadir tests.
 - [ ] **Logo / favicon de marca** — actualmente el icono se genera dinámicamente con una "P" tipográfica. Mejor un SVG curado.
 
 ### Medio plazo — escalar y monetizar
