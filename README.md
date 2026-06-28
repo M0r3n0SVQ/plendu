@@ -4,7 +4,7 @@
 
 App para generar fichas de Vinted a partir de fotos. Subes hasta 4 imágenes de una prenda y la IA te devuelve título, descripción, precio, categoría, estado, marca y talla. Gratis, sin registro.
 
-Web: [plendu.app](https://plendu.app)
+Web: [plendu.app](https://plendu.vercel.app/)
 
 ## Cómo funciona
 
