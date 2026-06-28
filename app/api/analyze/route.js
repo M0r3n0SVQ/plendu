@@ -1,14 +1,41 @@
 import OpenAI from 'openai'
+import * as Sentry from '@sentry/nextjs'
+import { Ratelimit } from '@upstash/ratelimit'
+import { Redis } from '@upstash/redis'
+
+// Vercel: pin to Node runtime (OpenAI SDK + large bodies),
+// allow up to 60s for vision inference, force per-request execution.
+export const runtime  = 'nodejs'
+export const maxDuration = 60
+export const dynamic  = 'force-dynamic'
 
 // Guard: fail fast at cold-start if key is missing
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null
 
-// ─── Rate limiting (in-memory, per IP) ───────────────────────────────────────
-const rateLimitMap = new Map()
+// ─── Rate limiting ───────────────────────────────────────────────────────────
+// Production: Upstash Redis sliding window — survives cold starts and is
+// shared across all serverless instances.
+// Dev / preview without Upstash vars: in-memory fallback (per-instance only).
 const RATE_LIMIT_WINDOW_MS  = 60_000  // 1 minute window
 const RATE_LIMIT_MAX        = 10      // max requests per IP per window
+
+const upstashConfigured =
+  !!process.env.UPSTASH_REDIS_REST_URL &&
+  !!process.env.UPSTASH_REDIS_REST_TOKEN
+
+const ratelimit = upstashConfigured
+  ? new Ratelimit({
+      redis:    Redis.fromEnv(),
+      limiter:  Ratelimit.slidingWindow(RATE_LIMIT_MAX, '60 s'),
+      analytics: true,
+      prefix:   'plendu:rl:analyze',
+    })
+  : null
+
+// In-memory fallback (used only when Upstash is not configured)
+const rateLimitMap = new Map()
 
 function getClientIP(request) {
   return (
@@ -18,10 +45,8 @@ function getClientIP(request) {
   )
 }
 
-function isRateLimited(ip) {
+function isRateLimitedInMemory(ip) {
   const now = Date.now()
-
-  // Prevent unbounded map growth under heavy load
   if (rateLimitMap.size > 10_000) rateLimitMap.clear()
 
   const record = rateLimitMap.get(ip)
@@ -34,9 +59,27 @@ function isRateLimited(ip) {
   return false
 }
 
+// Returns { limited: boolean, retryAfter: number } — never throws.
+// On Upstash error we fail OPEN: legitimate users shouldn't be blocked by
+// our infra failing. The OpenAI cost cap is the actual safety net.
+async function checkRateLimit(ip) {
+  if (ratelimit) {
+    try {
+      const { success, reset } = await ratelimit.limit(ip)
+      const retryAfter = Math.max(1, Math.ceil((reset - Date.now()) / 1000))
+      return { limited: !success, retryAfter }
+    } catch (err) {
+      console.error('[ratelimit] upstash failed, allowing request:', err?.message)
+      return { limited: false, retryAfter: 60 }
+    }
+  }
+  return { limited: isRateLimitedInMemory(ip), retryAfter: 60 }
+}
+
 // ─── Validation constants ─────────────────────────────────────────────────────
 const ALLOWED_MIMES  = new Set(['image/jpeg', 'image/png', 'image/webp'])
-const MAX_BASE64_LEN = 7 * 1024 * 1024   // ~5 MB file in base64 ≈ 6.8 MB chars
+// 7 MB of base64 chars ≈ 5.25 MB of binary (base64 = 4/3 overhead)
+const MAX_BASE64_LEN = 7 * 1024 * 1024
 const MAX_BODY_BYTES = 30 * 1024 * 1024  // 30 MB hard cap for 4 images combined
 
 // Validate base64 format and size
@@ -58,10 +101,11 @@ function validateFoto(foto) {
 
 export async function POST(request) {
   // ── Rate limit ───────────────────────────────────────────────────────────────
-  if (isRateLimited(getClientIP(request))) {
+  const { limited, retryAfter } = await checkRateLimit(getClientIP(request))
+  if (limited) {
     return Response.json(
       { error: 'Demasiadas peticiones. Espera un momento.' },
-      { status: 429, headers: { 'Retry-After': '60' } }
+      { status: 429, headers: { 'Retry-After': String(retryAfter) } }
     )
   }
 
@@ -215,7 +259,7 @@ Responde SOLO con JSON válido: {"_analisis":"","titulo":"","descripcion":"","pr
           ],
         },
       ],
-      max_tokens: 600,
+      max_tokens: 800,
     })
 
     const content = response.choices[0]?.message?.content
@@ -269,6 +313,13 @@ Responde SOLO con JSON válido: {"_analisis":"","titulo":"","descripcion":"","pr
       err.status === 429 ? 'Demasiadas peticiones. Espera un momento.' :
       err.status === 401 ? 'Clave de API inválida. Contacta con soporte.' :
       'Error al analizar la prenda. Inténtalo de nuevo.'
+
+    // Only surface unexpected errors to Sentry. 429/401 are upstream signals
+    // that we already handle by design — they'd just be noise.
+    if (status === 500) {
+      Sentry.captureException(err, { tags: { route: 'api/analyze' } })
+    }
+
     return Response.json({ error: message }, { status })
   }
 }

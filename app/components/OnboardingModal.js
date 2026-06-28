@@ -30,9 +30,11 @@ export default function OnboardingModal() {
   const triggerRef = useRef(null) // element focused before modal opened
 
   useEffect(() => {
+    // One-shot read from localStorage on mount to decide if we show the modal.
     const done = localStorage.getItem(ONBOARDING_KEY)
     if (!done) {
       triggerRef.current = document.activeElement
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setVisible(true)
     }
   }, [])

@@ -1,0 +1,17 @@
+services:
+  plendu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: plendu-app
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - plendu-network
+
+networks:
+  plendu-network:
+    driver: bridge
