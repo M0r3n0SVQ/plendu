@@ -81,7 +81,11 @@ app/
     sync/route.ts        GET/POST/DELETE del historial por código de sincronización
     pwa-icon/route.js    Icono PWA dinámico
   components/
-    ImageUploader.js     Subida, compresión, panel resultado, historial
+    ImageUploader.js     Orquesta subida, drag-reorder, análisis y estado del historial
+    FichaPanel.js        Ficha generada: edición, copiar, compartir, imagen story
+    EmptyPanel.js         Estado vacío + lista del historial
+    SkeletonPanel.js      Shimmer mientras la IA analiza
+    Toast.js              Notificaciones con acción (deshacer, reintentar...)
     PhotoEditor.js       Recortar y rotar fotos en canvas
     SyncModal.js         UI de la sincronización por código
     OnboardingModal.js   Modal de la primera visita
@@ -89,11 +93,14 @@ app/
     ThemeToggle.js
   lib/                 TypeScript
     historial.ts       Saneado de fichas/historial (compartido cliente + servidor)
+    historialStore.ts   Persistencia en localStorage + push a sincronización
     rateLimit.ts       Rate limiting con fallback en memoria
     redis.ts           Cliente de Upstash
     syncClient.ts       Fetch wrappers de /api/sync
-    imageUtils.ts       Helpers de canvas (cargar imagen, exportar blob)
-    vintedOptions.ts    Constantes de categorías/estados/alertas
+    imageUtils.ts       Compresión, miniaturas, canvas de la imagen story
+    csvExport.ts         Exportar historial a CSV
+    clipboard.ts         Copiar al portapapeles con fallback
+    vintedOptions.ts    Constantes de categorías/estados/tallas/alertas
   guias/               Guías de contenido (SEO)
   privacidad/page.js
   layout.js              Metadata, JSON-LD, SW, theme inline
@@ -154,8 +161,8 @@ Mantenimiento:
 
 - [x] Migrar a TypeScript poco a poco, empezando por `app/api` (hecho: `app/api` y `app/lib`; el resto sigue en JS)
 - [x] Validar la respuesta de la IA con Zod
+- [x] Partir `ImageUploader.js` en archivos separados (1695 → 752 líneas; 4 componentes y 3 módulos de `lib/` nuevos)
 - [ ] Sacar el panel derecho del portal y meterlo en estado React
-- [ ] Partir `ImageUploader.js` en archivos separados
 - [ ] Seguir la migración a TypeScript por los componentes (`.tsx`)
 
 ## Privacidad

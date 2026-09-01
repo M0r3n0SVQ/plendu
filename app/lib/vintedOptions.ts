@@ -42,3 +42,18 @@ export const CATEGORIA_OPTIONS = [
   'Ropa niña', 'Ropa niño', 'Calzado niños', 'Accesorios niños',
 ] as const
 export type Categoria = (typeof CATEGORIA_OPTIONS)[number]
+
+// Suggested values for the talla <datalist> — not a closed enum like the
+// others above, sellers can type anything the AI didn't already fill in.
+export const TALLA_OPTIONS = [
+  // Letter sizes
+  'XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL',
+  // Numeric clothing
+  '34', '36', '38', '40', '42', '44', '46', '48',
+  // Shoe sizes
+  '35', '37', '39', '41', '43', '45', '47',
+  // Jeans waist
+  '28', '30', '32',
+  // Kids
+  '2 años', '4 años', '6 años', '8 años', '10 años', '12 años', '14 años',
+] as const
