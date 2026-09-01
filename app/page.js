@@ -1,8 +1,13 @@
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import ImageUploader from './components/ImageUploader'
-import OnboardingModal from './components/OnboardingModal'
-import PWAInstall from './components/PWAInstall'
 import ThemeToggle from './components/ThemeToggle'
+
+// Neither renders anything until after a client-side check (onboarding flag /
+// beforeinstallprompt event) — code-split out of the main chunk since they're
+// never needed for the first paint.
+const OnboardingModal = dynamic(() => import('./components/OnboardingModal'))
+const PWAInstall = dynamic(() => import('./components/PWAInstall'))
 
 const STATS = [
   { num: '< 10s', label: 'POR ANÁLISIS' },
@@ -21,8 +26,7 @@ export default function Home() {
       <OnboardingModal />
       <PWAInstall />
 
-      <div className="orb orb-1" aria-hidden="true" />
-      <div className="orb orb-2" aria-hidden="true" />
+      <span className="brand-mark" aria-hidden="true">P</span>
 
       <header className="header">
         <div className="logo" aria-label="Plendu">
@@ -42,7 +46,6 @@ export default function Home() {
       >
         <section className="col-left" aria-label="Subir fotos y generar ficha">
           <p className="eyebrow" aria-hidden="true">
-            <span className="eyebrow-line" />
             IA PARA VINTED
           </p>
 

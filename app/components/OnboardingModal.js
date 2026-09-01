@@ -13,7 +13,7 @@ const STEPS = [
   {
     num: '02',
     title: 'Genera la ficha con IA',
-    desc: 'GPT-4o mini analiza las imágenes y devuelve título, descripción con emojis estilo Vinted, precio, estado, categoría, marca y talla.',
+    desc: 'GPT-4o mini analiza las imágenes y devuelve título, descripción lista para publicar, precio, estado, categoría, marca y talla.',
   },
   {
     num: '03',

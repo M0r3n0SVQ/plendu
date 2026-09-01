@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { ESTADO_OPTIONS, CATEGORIA_OPTIONS, DUDOSO_FIELDS, ALERTA_MESSAGES } from '../lib/vintedOptions'
+import PhotoEditor from './PhotoEditor'
 
 const SLOTS = [
   { key: 'principal', label: 'Principal', icon: '⊡', required: true,  hint: 'foto frontal',  gridClass: 'slot-principal' },
@@ -14,14 +16,6 @@ const MAX_MB = 5
 const ALLOWED = ['image/jpeg', 'image/png', 'image/webp']
 const HISTORIAL_KEY = 'plendu_historial'
 const MAX_HISTORIAL = 10
-
-const ESTADO_OPTIONS = [
-  'Nuevo con etiquetas',
-  'Nuevo sin etiquetas',
-  'Muy bueno',
-  'Bueno',
-  'Satisfactorio',
-]
 
 const TALLA_OPTIONS = [
   // Letter sizes
@@ -36,19 +30,37 @@ const TALLA_OPTIONS = [
   '2 años', '4 años', '6 años', '8 años', '10 años', '12 años', '14 años',
 ]
 
-const CATEGORIA_OPTIONS = [
-  // Mujer
-  'Camisetas y tops', 'Camisas y blusas', 'Jerseys y sudaderas', 'Vestidos',
-  'Faldas', 'Pantalones', 'Vaqueros', 'Chaquetas y abrigos', 'Ropa de deporte',
-  'Ropa interior', 'Bañadores', 'Trajes y conjuntos', 'Calzado mujer',
-  'Bolsos', 'Accesorios mujer',
-  // Hombre
-  'Camisetas', 'Camisas', 'Jerseys y sudaderas hombre', 'Pantalones hombre',
-  'Vaqueros hombre', 'Chaquetas y abrigos hombre', 'Ropa de deporte hombre',
-  'Calzado hombre', 'Accesorios hombre',
-  // Niños
-  'Ropa niña', 'Ropa niño', 'Calzado niños', 'Accesorios niños',
-]
+// Coarse average-luminance sample to flag photos that are clearly too dark
+// or blown out before spending an API call on them. Draws the source canvas
+// down to a tiny sample canvas first and reads *that* — getImageData on the
+// full w×h canvas would allocate/copy the whole multi-MB pixel buffer just
+// to average a few thousand of them, which the browser's own image scaling
+// already does more cheaply (and more accurately: every source pixel
+// contributes to the downsample, not just the ones a stride happens to land
+// on). Deliberately skips blur detection: a simple sharpness heuristic (e.g.
+// Laplacian variance) flags flat, low-texture garments — a plain black
+// t-shirt — as "blurry" just as often as an actually blurry photo, which
+// would be more annoying than useful.
+function estimateExposure(ctx, w, h) {
+  const SAMPLE = 40
+  const sw = Math.max(1, Math.min(SAMPLE, w))
+  const sh = Math.max(1, Math.min(SAMPLE, h))
+  const sampleCanvas = document.createElement('canvas')
+  sampleCanvas.width = sw
+  sampleCanvas.height = sh
+  const sampleCtx = sampleCanvas.getContext('2d')
+  sampleCtx.drawImage(ctx.canvas, 0, 0, sw, sh)
+  const { data } = sampleCtx.getImageData(0, 0, sw, sh)
+  let sum = 0
+  const count = sw * sh
+  for (let i = 0; i < data.length; i += 4) {
+    sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+  }
+  const avg = sum / count
+  if (avg < 35)  return 'oscura'
+  if (avg > 245) return 'clara'
+  return null
+}
 
 // ─── Image compression ────────────────────────────────────────────────────────
 // Resize to max 1024px and encode as JPEG 0.82 before sending to the API.
@@ -66,12 +78,14 @@ function compressImage(file, maxDim = 1024, quality = 0.82) {
         const canvas = document.createElement('canvas')
         canvas.width = w
         canvas.height = h
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, w, h)
         const dataUrl = canvas.toDataURL('image/jpeg', quality)
+        const exposure = estimateExposure(ctx, w, h)
         // Release canvas memory
         canvas.width = 0
         canvas.height = 0
-        resolve(dataUrl.split(',')[1]) // return base64 part only
+        resolve({ base64: dataUrl.split(',')[1], exposure }) // base64 part only
       } catch (e) {
         reject(e)
       }
@@ -131,17 +145,20 @@ function copyToClipboard(text) {
   })
 }
 
-const FICHA_FIELD_MAX_LEN = 1000  // bumped to fit emoji descriptions
+const FICHA_FIELD_MAX_LEN = 1000
 const MEDIDAS_MAX_LEN     = 100
 
 function sanitizeFicha(raw) {
   if (!raw || typeof raw !== 'object') return null
   const safe = {}
-  for (const f of ['titulo', 'descripcion', 'estado', 'categoria', 'marca', 'talla']) {
+  for (const f of ['titulo', 'descripcion', 'estado', 'categoria', 'marca', 'talla', 'alerta']) {
     if (typeof raw[f] === 'string') safe[f] = raw[f].slice(0, FICHA_FIELD_MAX_LEN)
   }
   if (typeof raw.medidas === 'string') safe.medidas = raw.medidas.slice(0, MEDIDAS_MAX_LEN)
   if (typeof raw.precio === 'number' && isFinite(raw.precio)) safe.precio = raw.precio
+  safe.camposDudosos = Array.isArray(raw.camposDudosos)
+    ? raw.camposDudosos.filter(f => DUDOSO_FIELDS.includes(f))
+    : []
   return safe
 }
 
@@ -163,10 +180,12 @@ function loadHistorial() {
           item.thumbnail.length < 200_000
         ) ? item.thumbnail : null
         return {
-          id:        item.id,
-          fecha:     item.fecha.slice(0, 20),
+          id:         item.id,
+          fecha:      item.fecha.slice(0, 20),
           ficha,
           thumbnail,
+          vendida:    item.vendida === true,
+          precioVenta: typeof item.precioVenta === 'number' && isFinite(item.precioVenta) ? item.precioVenta : null,
         }
       })
       .filter(Boolean)
@@ -182,6 +201,58 @@ function saveHistorial(items) {
   } catch {
     return false
   }
+}
+
+// Quotes a CSV field and doubles any internal quotes (RFC 4180)
+function csvField(value) {
+  return `"${String(value ?? '').replace(/"/g, '""')}"`
+}
+
+function historialToCSV(historial) {
+  const headers = [
+    'Fecha', 'Título', 'Descripción', 'Precio', 'Estado', 'Categoría', 'Marca', 'Talla', 'Medidas',
+    'Campos estimados', 'Alerta', 'Vendida', 'Precio de venta',
+  ]
+  const rows = historial.map(item => [
+    item.fecha,
+    item.ficha.titulo,
+    item.ficha.descripcion,
+    item.ficha.precio,
+    item.ficha.estado,
+    item.ficha.categoria,
+    item.ficha.marca,
+    item.ficha.talla,
+    item.ficha.medidas || '',
+    Array.isArray(item.ficha.camposDudosos) ? item.ficha.camposDudosos.join('; ') : '',
+    ALERTA_MESSAGES[item.ficha.alerta] || '',
+    item.vendida ? 'Sí' : 'No',
+    item.vendida && item.precioVenta != null ? item.precioVenta : '',
+  ])
+  // Leading BOM so Excel detects UTF-8 instead of mangling acentos/€
+  return '﻿' + [headers, ...rows].map(row => row.map(csvField).join(',')).join('\r\n')
+}
+
+// Used to open the photo editor on the already-compressed image (~80-200KB,
+// per compressImage's comment) rather than the original multi-MB upload —
+// re-encoding a full-resolution original on every rotate/crop step risks
+// coming back over the 5MB cap and having the edit silently rejected.
+function base64ToBlobUrl(base64, mime) {
+  const bytes = atob(base64)
+  const buf = new Uint8Array(bytes.length)
+  for (let i = 0; i < bytes.length; i++) buf[i] = bytes.charCodeAt(i)
+  return URL.createObjectURL(new Blob([buf], { type: mime }))
+}
+
+function downloadTextFile(filename, content, mime) {
+  const blob = new Blob([content], { type: mime })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }
 
 /* ─── Toast ──────────────────────────────── */
@@ -211,7 +282,7 @@ function Toast({ message, type, onDone, duration = 3000, action, onAction }) {
 }
 
 /* ─── Empty state ────────────────────────── */
-function EmptyPanel({ historial, onSelectHistorial, onDeleteHistorial, onClearHistorial }) {
+function EmptyPanel({ historial, onSelectHistorial, onDeleteHistorial, onClearHistorial, onExportHistorial, onToggleVendida }) {
   if (historial.length === 0) {
     return (
       <div className="col-right-empty no-historial">
@@ -231,19 +302,28 @@ function EmptyPanel({ historial, onSelectHistorial, onDeleteHistorial, onClearHi
         <div className="historial-header-right">
           <span className="historial-count">{historial.length} prendas</span>
           {historial.length > 0 && (
-            <button
-              className="historial-clear-btn"
-              onClick={onClearHistorial}
-              aria-label="Borrar todo el historial"
-            >
-              BORRAR TODO
-            </button>
+            <>
+              <button
+                className="historial-export-btn"
+                onClick={onExportHistorial}
+                aria-label="Exportar historial a CSV"
+              >
+                EXPORTAR
+              </button>
+              <button
+                className="historial-clear-btn"
+                onClick={onClearHistorial}
+                aria-label="Borrar todo el historial"
+              >
+                BORRAR TODO
+              </button>
+            </>
           )}
         </div>
       </div>
       <ul className="historial-list" role="list">
         {historial.map((item) => (
-          <li key={item.id} className="historial-item-wrap">
+          <li key={item.id} className={`historial-item-wrap${item.vendida ? ' vendida' : ''}`}>
             <button
               className="historial-item"
               onClick={() => onSelectHistorial(item)}
@@ -273,10 +353,19 @@ function EmptyPanel({ historial, onSelectHistorial, onDeleteHistorial, onClearHi
                     {item.ficha.precio}€
                     {item.ficha.marca ? ` · ${item.ficha.marca}` : ''}
                     {item.ficha.talla ? ` · ${item.ficha.talla}` : ''}
+                    {item.vendida ? ' · VENDIDA' : ''}
                   </p>
                 </div>
               </div>
               <span className="historial-item-date">{item.fecha}</span>
+            </button>
+            <button
+              className={`historial-item-vendida${item.vendida ? ' is-vendida' : ''}`}
+              onClick={() => onToggleVendida(item.id)}
+              aria-label={item.vendida ? `Desmarcar "${item.ficha.titulo}" como vendida` : `Marcar "${item.ficha.titulo}" como vendida`}
+              title={item.vendida ? 'Vendida — pulsa para desmarcar' : 'Marcar como vendida'}
+            >
+              ✓
             </button>
             <button
               className="historial-item-delete"
@@ -294,13 +383,31 @@ function EmptyPanel({ historial, onSelectHistorial, onDeleteHistorial, onClearHi
 }
 
 /* ─── Skeleton shimmer ───────────────────── */
+const ANALIZANDO_MENSAJES = [
+  'Analizando fotos...',
+  'Detectando marca y talla...',
+  'Redactando la descripción...',
+  'Calculando precio de mercado...',
+]
+
 function SkeletonPanel() {
+  const [msgIndex, setMsgIndex] = useState(0)
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setMsgIndex(i => (i + 1) % ANALIZANDO_MENSAJES.length)
+    }, 2200)
+    return () => clearInterval(id)
+  }, [])
+
   return (
     <div className="skeleton-wrap">
       <div className="skeleton-header">
         <div className="skeleton-status">
           <span className="skeleton-dot" />
-          <div className="sk" style={{ width: 110, height: 10 }} />
+          <span className="skeleton-status-text" aria-live="polite">
+            {ANALIZANDO_MENSAJES[msgIndex]}
+          </span>
         </div>
         <div className="sk sk-pill" style={{ width: 70, height: 20 }} />
       </div>
@@ -348,6 +455,23 @@ function FichaPanel({
 
   // Reload local ficha when a new ficha arrives (AI result or historial item)
   useEffect(() => { setFicha(fichaInit) }, [fichaInit])
+
+  // Fields the AI flagged as an uncertain estimate (e.g. talla guessed with no visible tag)
+  const esDudoso = (campo) => Array.isArray(ficha.camposDudosos) && ficha.camposDudosos.includes(campo)
+
+  // A field the AI flagged as uncertain stops being uncertain once a human
+  // has actually looked at it and (re)typed the value — clear the flag
+  // alongside the edit so "ESTIMADO" doesn't keep pointing at a value nobody
+  // estimated anymore.
+  const setCampoVerificado = (campo, valor) => {
+    setFicha(prev => ({
+      ...prev,
+      [campo]: valor,
+      camposDudosos: Array.isArray(prev.camposDudosos)
+        ? prev.camposDudosos.filter(f => f !== campo)
+        : prev.camposDudosos,
+    }))
+  }
 
   // Web Share API — only available on HTTPS + mobile browsers
   const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
@@ -424,6 +548,13 @@ function FichaPanel({
 
   return (
     <div className="ficha">
+      {ALERTA_MESSAGES[ficha.alerta] && (
+        <div className="ficha-alert" role="alert">
+          <span className="ficha-alert-icon" aria-hidden="true">!</span>
+          <span>{ALERTA_MESSAGES[ficha.alerta]}</span>
+        </div>
+      )}
+
       {thumbnail && (
         <div className="ficha-thumbnail-wrap">
           <img
@@ -529,13 +660,13 @@ function FichaPanel({
             {key === 'titulo' && (
               <p className={`ficha-char-count${(editando === key ? draft : value).length > 80 ? ' over' : ''}`}>
                 {(editando === key ? draft : value).length}/80 caracteres
-                {(editando === key ? draft : value).length > 80 ? ' — demasiado largo' : ''}
+                {(editando === key ? draft : value).length > 80 ? ' · demasiado largo' : ''}
               </p>
             )}
             {key === 'descripcion' && (
               <p className={`ficha-char-count${(editando === key ? draft : value).length > 800 ? ' over' : ''}`}>
                 {(editando === key ? draft : value).length}/800 caracteres
-                {(editando === key ? draft : value).length > 800 ? ' — puede ser demasiado larga' : ''}
+                {(editando === key ? draft : value).length > 800 ? ' · puede ser demasiado larga' : ''}
               </p>
             )}
           </div>
@@ -576,14 +707,17 @@ function FichaPanel({
                 aria-hidden="true"
               />
             )}
+            {esDudoso('estado') && (
+              <span className="dudoso-badge" title="Estimado por la IA — revísalo antes de publicar">ESTIMADO</span>
+            )}
           </span>
           <select
             className="meta-input meta-select"
             value={ficha.estado || ''}
-            onChange={e => setFicha(prev => ({ ...prev, estado: e.target.value }))}
+            onChange={e => setCampoVerificado('estado', e.target.value)}
             aria-label="Estado de la prenda"
           >
-            <option value="">— elegir —</option>
+            <option value="">Elegir estado</option>
             {ESTADO_OPTIONS.map(s => (
               <option key={s} value={s}>{s}</option>
             ))}
@@ -591,11 +725,16 @@ function FichaPanel({
         </div>
 
         <div className="ficha-meta-field">
-          <span className="ficha-meta-label">CATEGORÍA</span>
+          <span className="ficha-meta-label">
+            CATEGORÍA
+            {esDudoso('categoria') && (
+              <span className="dudoso-badge" title="Estimado por la IA — revísalo antes de publicar">ESTIMADO</span>
+            )}
+          </span>
           <input
             className="meta-input"
             value={ficha.categoria || ''}
-            onChange={e => setFicha(prev => ({ ...prev, categoria: e.target.value.slice(0, 100) }))}
+            onChange={e => setCampoVerificado('categoria', e.target.value.slice(0, 100))}
             placeholder="ej: Camisetas y tops"
             aria-label="Categoría de Vinted"
             list="vinted-categorias"
@@ -606,22 +745,32 @@ function FichaPanel({
         </div>
 
         <div className="ficha-meta-field">
-          <span className="ficha-meta-label">MARCA</span>
+          <span className="ficha-meta-label">
+            MARCA
+            {esDudoso('marca') && (
+              <span className="dudoso-badge" title="Estimado por la IA — revísalo antes de publicar">ESTIMADO</span>
+            )}
+          </span>
           <input
             className="meta-input"
             value={ficha.marca || ''}
-            onChange={e => setFicha(prev => ({ ...prev, marca: e.target.value.slice(0, 100) }))}
+            onChange={e => setCampoVerificado('marca', e.target.value.slice(0, 100))}
             placeholder="ej: Nike"
             aria-label="Marca de la prenda"
           />
         </div>
 
         <div className="ficha-meta-field">
-          <span className="ficha-meta-label">TALLA</span>
+          <span className="ficha-meta-label">
+            TALLA
+            {esDudoso('talla') && (
+              <span className="dudoso-badge" title="Estimado por la IA — revísalo antes de publicar">ESTIMADO</span>
+            )}
+          </span>
           <input
             className="meta-input"
             value={ficha.talla || ''}
-            onChange={e => setFicha(prev => ({ ...prev, talla: e.target.value.slice(0, 50) }))}
+            onChange={e => setCampoVerificado('talla', e.target.value.slice(0, 50))}
             placeholder="ej: M"
             aria-label="Talla de la prenda"
             list="vinted-tallas"
@@ -702,6 +851,9 @@ export default function ImageUploader() {
   const [portalTarget, setPortalTarget] = useState(null)
   const [historial, setHistorial]       = useState([])
   const [medidas, setMedidas]           = useState('')
+  const [notas, setNotas]               = useState('')
+  const [editingKey, setEditingKey]     = useState(null)
+  const [editorUrl, setEditorUrl]       = useState(null)
 
   const abortRef            = useRef(null)
   const hintTimerRef        = useRef(null)
@@ -748,12 +900,18 @@ export default function ImageUploader() {
     setThumbnail(null)
 
     try {
-      const base64 = await compressImage(file)
+      const { base64, exposure } = await compressImage(file)
+      let discarded = false
       setFotos(prev => {
         // If user replaced this slot before compression finished, discard
-        if (prev[key]?.url !== url) { URL.revokeObjectURL(url); return prev }
+        if (prev[key]?.url !== url) { discarded = true; URL.revokeObjectURL(url); return prev }
         return { ...prev, [key]: { url, base64, mime: 'image/jpeg', compressing: false } }
       })
+      if (!discarded && exposure === 'oscura') {
+        showToast('Esta foto se ve bastante oscura, la IA podría acertar menos. Si puedes, repítela con más luz.', 'info')
+      } else if (!discarded && exposure === 'clara') {
+        showToast('Esta foto sale muy sobreexpuesta (demasiada luz), la IA podría acertar menos.', 'info')
+      }
     } catch {
       URL.revokeObjectURL(url)
       setFotos(prev => { const { [key]: _, ...rest } = prev; return rest })
@@ -794,6 +952,82 @@ export default function ImageUploader() {
     files.slice(0, targets.length).forEach((file, i) => processFile(file, targets[i]))
   }, [processFile, fotos])
 
+  // Swap (or move, if the target is empty) an already-uploaded photo into a
+  // different slot. Guards against a slot mid-compression: swapping it here
+  // and having processFile's stale-check resolve against the OLD key later
+  // would revoke the URL the photo just moved to and leave it stuck loading.
+  const swapSlots = useCallback((keyA, keyB) => {
+    if (keyA === keyB) return
+    setFotos(prev => {
+      if (!prev[keyA] || prev[keyA].compressing) return prev
+      const next = { ...prev }
+      const fromPhoto = prev[keyA]
+      const toPhoto = prev[keyB]
+      if (toPhoto) {
+        next[keyB] = fromPhoto
+        next[keyA] = toPhoto
+      } else {
+        next[keyB] = fromPhoto
+        delete next[keyA]
+      }
+      return next
+    })
+  }, [])
+
+  // Reorder photos by dragging one slot onto another. Built on Pointer Events
+  // (not native HTML5 drag-and-drop) specifically because native DnD never
+  // fires from touch input on mobile Safari/Chrome — this is a resale app,
+  // most sellers are on a phone, and that's the platform this has to work on.
+  const REORDER_THRESHOLD = 8
+  const reorderRef = useRef(null)       // { key, startX, startY, isDragging, pointerId }
+  const justReorderedRef = useRef(false) // suppresses the click-to-open-file-picker right after a real drag
+  const [reorderDragKey, setReorderDragKey] = useState(null)
+  const [reorderOverKey, setReorderOverKey] = useState(null)
+
+  const slotKeyAtPoint = (x, y) => {
+    const el = document.elementFromPoint(x, y)
+    return el?.closest('[data-slot-key]')?.dataset.slotKey || null
+  }
+
+  const handleSlotPointerDown = useCallback((e, key) => {
+    if (!fotos[key] || fotos[key].compressing) return
+    reorderRef.current = { key, startX: e.clientX, startY: e.clientY, isDragging: false, pointerId: e.pointerId }
+  }, [fotos])
+
+  const handleSlotPointerMove = useCallback((e) => {
+    const state = reorderRef.current
+    if (!state) return
+    if (!state.isDragging) {
+      const moved = Math.hypot(e.clientX - state.startX, e.clientY - state.startY)
+      if (moved < REORDER_THRESHOLD) return
+      state.isDragging = true
+      setReorderDragKey(state.key)
+      try { e.currentTarget.setPointerCapture?.(state.pointerId) } catch { /* no active pointer — fine */ }
+    }
+    e.preventDefault() // stop touch-scroll once a drag is actually underway
+    setReorderOverKey(slotKeyAtPoint(e.clientX, e.clientY))
+  }, [])
+
+  const handleSlotPointerUp = useCallback((e) => {
+    const state = reorderRef.current
+    reorderRef.current = null
+    setReorderDragKey(null)
+    setReorderOverKey(null)
+    if (!state?.isDragging) return
+    justReorderedRef.current = true
+    const overKey = slotKeyAtPoint(e.clientX, e.clientY)
+    if (overKey) swapSlots(state.key, overKey)
+  }, [swapSlots])
+
+  // <label> normally opens the file picker on click — suppress just the one
+  // click that follows a real drag gesture, let every other click through.
+  const handleSlotClickCapture = useCallback((e) => {
+    if (justReorderedRef.current) {
+      justReorderedRef.current = false
+      e.preventDefault()
+    }
+  }, [])
+
   // ── Paste from clipboard (Ctrl+V / ⌘V) ──────────────────────────────────────
   useEffect(() => {
     const handlePaste = (e) => {
@@ -821,9 +1055,14 @@ export default function ImageUploader() {
     const controller = new AbortController()
     abortRef.current = controller
 
-    // Auto-abort after 35s — prevents waiting forever on slow AI responses
+    // Auto-abort after 45s. The server's own OpenAI client budgets up to
+    // ~40s worst case (20s timeout x up to 2 attempts, see route.js) before
+    // it can even return an error — aborting any sooner on the client just
+    // means the server keeps burning a real OpenAI request for a response
+    // the user already gave up on. 45s stays under Vercel's 60s maxDuration
+    // with margin while still giving the server's retry a chance to land.
     let timedOut = false
-    const timeoutId = setTimeout(() => { timedOut = true; controller.abort() }, 35_000)
+    const timeoutId = setTimeout(() => { timedOut = true; controller.abort() }, 45_000)
 
     setCargando(true)
     setFicha(null)
@@ -849,6 +1088,7 @@ export default function ImageUploader() {
             trasera:   makeFotoPayload(fotos.trasera),
             detalle:   makeFotoPayload(fotos.detalle),
           },
+          notas: notas.trim() || undefined,
         }),
       })
 
@@ -872,9 +1112,9 @@ export default function ImageUploader() {
       clearTimeout(hintTimerRef.current)
       hintTimerRef.current = setTimeout(() => {
         if (!data.marca && !data.talla) {
-          showToast('Sin etiqueta visible — añade una foto de la etiqueta para mejor resultado', 'info')
+          showToast('Sin etiqueta visible: añade una foto de la etiqueta para mejor resultado', 'info')
         } else if (data.estado === 'Satisfactorio') {
-          showToast('Estado Satisfactorio — recuerda fotografiar los defectos al publicar en Vinted', 'info')
+          showToast('Estado Satisfactorio: recuerda fotografiar los defectos al publicar en Vinted', 'info')
         }
       }, 500)
 
@@ -886,6 +1126,8 @@ export default function ImageUploader() {
         fecha,
         ficha: data,
         thumbnail: thumbBase64,
+        vendida: false,
+        precioVenta: null,
       }
 
       // Track which historial entry is being shown so medidas edits sync to it
@@ -900,15 +1142,15 @@ export default function ImageUploader() {
 
     } catch (err) {
       if (err.name === 'AbortError') {
-        if (timedOut) showToast('La IA tardó demasiado. Inténtalo de nuevo.')
+        if (timedOut) showToast('La IA tardó demasiado.', 'error', 'REINTENTAR', () => analizar())
         return
       }
-      showToast(err.message || 'Error inesperado.')
+      showToast(err.message || 'Error inesperado.', 'error', 'REINTENTAR', () => analizar())
     } finally {
       clearTimeout(timeoutId)
       setCargando(false)
     }
-  }, [fotos, cargando, historial, showToast])
+  }, [fotos, cargando, historial, showToast, notas])
 
   // ── Enter key shortcut ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -932,6 +1174,7 @@ export default function ImageUploader() {
     setThumbnail(null)
     setCargando(false)
     setMedidas('')
+    setNotas('')
     currentEntryIdRef.current = null
   }, [fotos])
 
@@ -939,6 +1182,7 @@ export default function ImageUploader() {
     setFicha(null)
     setThumbnail(null)
     setMedidas('')
+    setNotas('')
     currentEntryIdRef.current = null
   }, [])
 
@@ -946,6 +1190,7 @@ export default function ImageUploader() {
     setFicha(item.ficha)
     setThumbnail(item.thumbnail)
     setMedidas(typeof item.ficha.medidas === 'string' ? item.ficha.medidas : '')
+    setNotas('')
     currentEntryIdRef.current = item.id
   }, [])
 
@@ -990,6 +1235,18 @@ export default function ImageUploader() {
     )
   }, [historial, showToast])
 
+  const toggleVendida = useCallback((id) => {
+    setHistorial(prev => {
+      const next = prev.map(item =>
+        item.id === id
+          ? { ...item, vendida: !item.vendida, precioVenta: !item.vendida ? item.ficha.precio : null }
+          : item
+      )
+      saveHistorial(next)
+      return next
+    })
+  }, [])
+
   const removeSlot = useCallback((key) => {
     setFotos(prev => {
       if (prev[key]?.url) URL.revokeObjectURL(prev[key].url)
@@ -1001,6 +1258,19 @@ export default function ImageUploader() {
       setThumbnail(null)
     }
   }, [])
+
+  const openEditor = useCallback((key) => {
+    const foto = fotos[key]
+    if (!foto || foto.compressing || !foto.base64) return
+    setEditorUrl(base64ToBlobUrl(foto.base64, foto.mime || 'image/jpeg'))
+    setEditingKey(key)
+  }, [fotos])
+
+  const closeEditor = useCallback(() => {
+    if (editorUrl) URL.revokeObjectURL(editorUrl)
+    setEditorUrl(null)
+    setEditingKey(null)
+  }, [editorUrl])
 
   const clearHistorial = useCallback(() => {
     const backup = [...historial]
@@ -1016,6 +1286,13 @@ export default function ImageUploader() {
         saveHistorial(backup)
       }
     )
+  }, [historial, showToast])
+
+  const exportarHistorial = useCallback(() => {
+    if (historial.length === 0) return
+    const fecha = new Date().toISOString().slice(0, 10)
+    downloadTextFile(`plendu-historial-${fecha}.csv`, historialToCSV(historial), 'text/csv;charset=utf-8')
+    showToast(`${historial.length} ${historial.length === 1 ? 'ficha exportada' : 'fichas exportadas'}`, 'success')
   }, [historial, showToast])
 
   const rightPanel = () => {
@@ -1039,6 +1316,8 @@ export default function ImageUploader() {
         onSelectHistorial={selectHistorial}
         onDeleteHistorial={deleteHistorial}
         onClearHistorial={clearHistorial}
+        onExportHistorial={exportarHistorial}
+        onToggleVendida={toggleVendida}
       />
     )
   }
@@ -1053,6 +1332,14 @@ export default function ImageUploader() {
           onAction={toast.onAction}
           duration={toast.type === 'error' || toast.type === 'info' ? 5000 : 3000}
           onDone={() => setToast(null)}
+        />
+      )}
+
+      {editingKey && editorUrl && (
+        <PhotoEditor
+          photoUrl={editorUrl}
+          onApply={(file) => { processFile(file, editingKey); closeEditor() }}
+          onCancel={closeEditor}
         />
       )}
 
@@ -1082,8 +1369,14 @@ export default function ImageUploader() {
             return (
               <label
                 key={key}
-                className={`foto-slot ${gridClass}${filled ? ' filled' : ''}${isDraggingThis ? ' is-dragging' : ''}`}
-                aria-label={filled ? `Foto ${label.toLowerCase()} — haz clic para cambiar` : `Subir foto ${label.toLowerCase()}${required ? ' (obligatoria)' : ''}`}
+                data-slot-key={key}
+                className={`foto-slot ${gridClass}${filled ? ' filled' : ''}${isDraggingThis ? ' is-dragging' : ''}${reorderDragKey === key ? ' is-reorder-source' : ''}${reorderOverKey === key && reorderDragKey && reorderDragKey !== key ? ' is-reorder-target' : ''}`}
+                aria-label={filled ? `Foto ${label.toLowerCase()}, haz clic para cambiar` : `Subir foto ${label.toLowerCase()}${required ? ' (obligatoria)' : ''}`}
+                onPointerDown={filled ? (e) => handleSlotPointerDown(e, key) : undefined}
+                onPointerMove={filled ? handleSlotPointerMove : undefined}
+                onPointerUp={filled ? handleSlotPointerUp : undefined}
+                onPointerCancel={filled ? handleSlotPointerUp : undefined}
+                onClickCapture={filled ? handleSlotClickCapture : undefined}
                 onDragOver={(e) => handleDragOver(e, key)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, key)}
@@ -1094,6 +1387,7 @@ export default function ImageUploader() {
                       src={fotos[key].url}
                       alt={`Foto ${label.toLowerCase()} de la prenda`}
                       className="foto-preview"
+                      draggable={false}
                     />
                     {fotos[key]?.compressing && (
                       <div className="foto-compressing-overlay" aria-hidden="true">
@@ -1103,14 +1397,24 @@ export default function ImageUploader() {
                     <div className="foto-overlay">
                       <span className="foto-overlay-text">CAMBIAR FOTO</span>
                     </div>
-                    <button
-                      className="foto-remove"
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeSlot(key) }}
-                      aria-label={`Eliminar foto ${label.toLowerCase()}`}
-                      title="Eliminar foto"
-                    >
-                      ✕
-                    </button>
+                    <div className="foto-slot-buttons">
+                      <button
+                        className="foto-edit"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditor(key) }}
+                        aria-label={`Editar foto ${label.toLowerCase()}`}
+                        title="Recortar / rotar"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        className="foto-remove"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeSlot(key) }}
+                        aria-label={`Eliminar foto ${label.toLowerCase()}`}
+                        title="Eliminar foto"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </>
                 ) : (
                   <>
@@ -1130,9 +1434,25 @@ export default function ImageUploader() {
             )
           })}
         </div>
+        {numFotos >= 2 && (
+          <p className="foto-reorder-hint">Arrastra una foto sobre otra para intercambiarlas</p>
+        )}
 
         {fotos.principal && (
           <>
+            <div className="notas-field">
+              <label htmlFor="notas-ia" className="foto-count-label">NOTAS PARA LA IA (OPCIONAL)</label>
+              <input
+                id="notas-ia"
+                className="meta-input"
+                type="text"
+                value={notas}
+                onChange={e => setNotas(e.target.value.slice(0, 200))}
+                placeholder="ej: mancha pequeña en el interior de la manga"
+                maxLength={200}
+              />
+            </div>
+
             <button
               className={`btn-generate ${btnState} btn-enter`}
               onClick={analizar}

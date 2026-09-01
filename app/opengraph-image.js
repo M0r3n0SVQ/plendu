@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og'
 
 export const runtime = 'edge'
-export const alt = 'Plendu — Fichas para Vinted en segundos'
+export const alt = 'Plendu · Fichas para Vinted en segundos'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -89,7 +89,7 @@ export default function Image() {
 
         {/* Pills row */}
         <div style={{ display: 'flex', gap: 16 }}>
-          {['IA GPT-4o', 'Gratis', '< 10 segundos'].map((label) => (
+          {['IA · GPT-4o mini', 'Gratis', '< 10 segundos'].map((label) => (
             <div
               key={label}
               style={{

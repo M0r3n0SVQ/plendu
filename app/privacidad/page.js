@@ -1,7 +1,7 @@
 import Link from 'next/link'
 
 export const metadata = {
-  title: 'Privacidad — Plendu',
+  title: 'Privacidad · Plendu',
   description: 'Política de privacidad de Plendu. Qué datos tratamos, cómo y por qué.',
   alternates: { canonical: 'https://plendu.app/privacidad' },
   robots: { index: true, follow: true },
@@ -31,7 +31,7 @@ export default function Privacidad() {
 
       <main className="legal-main" aria-label="Política de privacidad">
         <h1 className="legal-h1">Política de privacidad</h1>
-        <p className="legal-meta">Última actualización: 1 de marzo de 2026</p>
+        <p className="legal-meta">Última actualización: 1 de septiembre de 2026</p>
 
         <section className="legal-section">
           <h2 className="legal-h2">Qué hace Plendu</h2>
@@ -65,6 +65,16 @@ export default function Privacidad() {
               <strong>Preferencia de tema:</strong> guardamos en localStorage
               tu elección de modo claro/oscuro para que se mantenga al volver.
             </li>
+            <li>
+              <strong>Analítica de uso:</strong> usamos Vercel Analytics para
+              saber cuántas visitas recibe Plendu y qué páginas se usan más.
+              No usa cookies, no guarda tu IP y no te identifica de forma
+              individual — solo agrega estadísticas (visitas, país
+              aproximado, tipo de dispositivo). Más info en{' '}
+              <a href="https://vercel.com/docs/analytics/privacy-policy" target="_blank" rel="noopener noreferrer">
+                la política de privacidad de Vercel Analytics
+              </a>.
+            </li>
           </ul>
         </section>
 
@@ -72,7 +82,7 @@ export default function Privacidad() {
           <h2 className="legal-h2">Qué NO hacemos</h2>
           <ul className="legal-list">
             <li>No usamos cookies de tracking ni publicidad.</li>
-            <li>No utilizamos analytics de terceros (Google Analytics, etc.).</li>
+            <li>No usamos Google Analytics ni ningún otro rastreador que te siga entre webs.</li>
             <li>No vendemos ni compartimos tus datos con terceros.</li>
             <li>No conservamos tus fotos ni las usamos para entrenar modelos.</li>
             <li>No requerimos cuenta, email ni teléfono.</li>

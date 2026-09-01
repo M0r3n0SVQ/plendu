@@ -50,14 +50,19 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "font-src 'self' https://fonts.gstatic.com",
+      // va.vercel-scripts.com serves the Vercel Analytics script — in
+      // production this is proxied same-origin, but local/preview builds
+      // (this one included) load it directly from that domain.
+      "script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com",
+      "style-src 'self' 'unsafe-inline'",
+      "font-src 'self'",
       // data: for base64 thumbnails stored in localStorage; blob: for object URLs
       "img-src 'self' data: blob:",
-      // API calls: own server + Sentry ingest (errors) + Vercel insights.
-      // OpenAI is called server-side, never from the browser.
-      "connect-src 'self' https://*.ingest.sentry.io https://*.sentry.io",
+      // API calls: own server + Sentry ingest (errors) + Vercel Analytics beacons.
+      // OpenAI is called server-side, never from the browser. blob: is for
+      // re-reading canvas output (photo crop/rotate) — these URLs can only
+      // ever point to something this page itself created, never a remote host.
+      "connect-src 'self' blob: https://*.ingest.sentry.io https://*.sentry.io https://va.vercel-scripts.com https://vitals.vercel-insights.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

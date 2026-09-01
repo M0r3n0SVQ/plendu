@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -22,9 +20,8 @@
   --r:            12px;
   --r-sm:         8px;
   --r-pill:       999px;
-  --font-display: 'Playfair Display', Georgia, serif;
-  --font-body:    'DM Sans', sans-serif;
-  --font-mono:    'DM Mono', monospace;
+  /* --font-display / --font-body / --font-mono come from next/font (app/fonts.js),
+     applied as CSS variables on <html> in layout.js */
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -68,35 +65,26 @@ body::after {
   z-index: 9999;
 }
 
-/* ─── Orbs ───────────────────────────────── */
-.orb {
+/* ─── Brand watermark ─────────────────────── */
+/* Oversized serif initial behind the layout — an editorial monogram touch
+   instead of a generic ambient gradient blob. */
+.brand-mark {
   position: fixed;
-  border-radius: 50%;
-  pointer-events: none;
+  top: -16vw;
+  right: -9vw;
   z-index: 0;
-  will-change: transform;
+  pointer-events: none;
+  user-select: none;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 46vw;
+  line-height: 1;
+  color: var(--accent);
+  opacity: 0.035;
 }
-.orb-1 {
-  width: 700px; height: 700px;
-  top: -200px; right: -200px;
-  background: radial-gradient(circle, rgba(184,150,90,0.07) 0%, transparent 65%);
-  filter: blur(40px);
-  animation: orbDrift1 22s ease-in-out infinite;
-}
-.orb-2 {
-  width: 500px; height: 500px;
-  bottom: -150px; left: -100px;
-  background: radial-gradient(circle, rgba(184,150,90,0.04) 0%, transparent 65%);
-  filter: blur(60px);
-  animation: orbDrift2 28s ease-in-out infinite;
-}
-@keyframes orbDrift1 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50%      { transform: translate(-40px, 30px) scale(1.04); }
-}
-@keyframes orbDrift2 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50%      { transform: translate(30px, -25px) scale(0.96); }
+@media (max-width: 860px) {
+  .brand-mark { display: none; }
 }
 
 /* ─── Page ───────────────────────────────── */
@@ -161,31 +149,6 @@ body::after {
   background: var(--accent-light);
   border-radius: var(--r-pill);
   padding: 0.3rem 0.75rem;
-  position: relative;
-  overflow: hidden;
-}
-/* Subtle shimmer across BETA tag every ~5s */
-.beta-tag::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 50%;
-  height: 100%;
-  background: linear-gradient(
-    100deg,
-    transparent 0%,
-    rgba(184,150,90,0.25) 50%,
-    transparent 100%
-  );
-  animation: betaShine 5s ease-in-out infinite;
-  animation-delay: 2s;
-  pointer-events: none;
-}
-@keyframes betaShine {
-  0%   { left: -100%; }
-  60%  { left: 200%; }
-  100% { left: 200%; }
 }
 
 /* ─── Main layout split ──────────────────── */
@@ -215,21 +178,12 @@ body::after {
 
 /* ─── Hero text ──────────────────────────── */
 .eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
   font-family: var(--font-mono);
   font-size: 0.68rem;
   font-weight: 500;
   letter-spacing: 0.2em;
   color: var(--accent);
   margin-bottom: 1.75rem;
-}
-.eyebrow-line {
-  width: 24px;
-  height: 1px;
-  background: var(--accent);
-  display: inline-block;
 }
 
 .hero-title {
@@ -243,25 +197,12 @@ body::after {
 }
 .hero-title em {
   font-style: italic;
-  /* Animated gold gradient — subtle shine effect that draws the eye */
-  background: linear-gradient(
-    100deg,
-    var(--accent) 0%,
-    #d4b070 30%,
-    var(--accent) 55%,
-    #d4b070 80%,
-    var(--accent) 100%
-  );
-  background-size: 250% 100%;
+  /* Static gold gradient — foil-stamped look, no motion */
+  background: linear-gradient(100deg, var(--accent) 0%, #d4b070 45%, var(--accent) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  animation: heroShine 6s ease-in-out infinite;
-}
-@keyframes heroShine {
-  0%, 100% { background-position: 0% 50%; }
-  50%      { background-position: 100% 50%; }
 }
 
 .hero-sub {
@@ -458,6 +399,14 @@ body::after {
   font-weight: 500;
 }
 
+/* ─── Notas para la IA ───────────────────── */
+.notas-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
 /* ─── Botón generar ──────────────────────── */
 .btn-generate {
   width: 100%;
@@ -617,6 +566,34 @@ body::after {
     transparent 100%
   ) 1;
   padding-top: 1.25rem;
+}
+/* ─── Ficha: alerta de prenda no apta ────── */
+.ficha-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  background: rgba(196, 90, 90, 0.1);
+  border: 1px solid rgba(196, 90, 90, 0.3);
+  border-radius: var(--r-sm);
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--fg);
+}
+.ficha-alert-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--error);
+  color: var(--bg);
+  font-size: 0.68rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.05rem;
 }
 @keyframes fichaEnter {
   from {
@@ -938,6 +915,12 @@ body::after {
   align-items: center;
   gap: 0.5rem;
 }
+.skeleton-status-text {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  color: var(--fg2);
+}
 .skeleton-dot {
   width: 6px;
   height: 6px;
@@ -1140,6 +1123,40 @@ body::after {
   .historial-item-delete { color: var(--fg3); opacity: 0.6; }
 }
 
+/* ─── Historial: marcar como vendida ─────── */
+.historial-item-vendida {
+  background: none;
+  border: none;
+  color: transparent;
+  cursor: pointer;
+  padding: 6px;
+  font-size: 0.68rem;
+  border-radius: var(--r-sm);
+  flex-shrink: 0;
+  line-height: 1;
+  transition: color 0.15s, background-color 0.15s;
+}
+.historial-item-wrap:hover .historial-item-vendida { color: var(--fg3); }
+.historial-item-vendida:hover {
+  color: var(--success) !important;
+  background-color: rgba(90, 158, 122, 0.12);
+}
+.historial-item-vendida.is-vendida {
+  color: var(--success) !important;
+  opacity: 1;
+}
+@media (max-width: 860px) {
+  .historial-item-vendida { color: var(--fg3); opacity: 0.6; }
+  .historial-item-vendida.is-vendida { opacity: 1; }
+}
+/* Sold items read as settled: dimmer thumbnail/title, keep price/meta legible */
+.historial-item-wrap.vendida .historial-item {
+  opacity: 0.6;
+}
+.historial-item-wrap.vendida:hover .historial-item {
+  opacity: 0.85;
+}
+
 /* ─── Light mode ─────────────────────────── */
 [data-theme="light"] {
   --bg:           #f5f2ed;
@@ -1148,9 +1165,14 @@ body::after {
   --fg:           #1a1714;
   --fg2:          #6b6560;
   --fg3:          #a09b95;
-  --accent:       #9a7a3a;
-  --accent-light: rgba(154, 122, 58, 0.1);
-  --accent-border:rgba(154, 122, 58, 0.25);
+  /* Darker than the dark-theme accent on purpose: #9a7a3a only hit 3.6:1
+     against this background (fails WCAG AA's 4.5:1 for normal text) — this
+     shade clears 4.65:1, checked against every place --accent doubles as
+     text color or as a background under --bg-colored text (links, tags,
+     buttons). */
+  --accent:       #846932;
+  --accent-light: rgba(132, 105, 50, 0.1);
+  --accent-border:rgba(132, 105, 50, 0.25);
   --success:      #3a7a5a;
   --error:        #a03a3a;
   --border:       rgba(26, 23, 20, 0.07);
@@ -1160,6 +1182,21 @@ body::after {
 
 [data-theme="light"] body::after {
   opacity: 0.015;
+}
+
+/* #d49060 is 2.18:1 on the light bg2 — too low to read as a warning label.
+   This darker rust clears 4.54:1. */
+[data-theme="light"] .dudoso-badge {
+  color: #8c5f3f;
+}
+
+/* The dark-theme gradient's #d4b070 highlight drops to 1.84:1 on a light
+   ground — moot anyway now that it's static rather than a moving shine, so
+   light mode just gets a solid, accessible accent instead of a gradient. */
+[data-theme="light"] .hero-title em {
+  background: none;
+  -webkit-text-fill-color: var(--accent);
+  color: var(--accent);
 }
 
 /* Skeleton shimmer adapted for light mode */
@@ -1177,11 +1214,8 @@ body::after {
   );
 }
 
-[data-theme="light"] .orb-1 {
-  background: radial-gradient(circle, rgba(154,122,58,0.08) 0%, transparent 65%);
-}
-[data-theme="light"] .orb-2 {
-  background: radial-gradient(circle, rgba(154,122,58,0.05) 0%, transparent 65%);
+[data-theme="light"] .brand-mark {
+  opacity: 0.05;
 }
 
 [data-theme="light"] .header {
@@ -1511,6 +1545,77 @@ body,
 }
 .modal-skip:hover { color: var(--fg2); }
 
+/* ─── Photo editor (crop / rotate) ───────── */
+.photo-editor {
+  max-width: 480px;
+  padding: 1.5rem;
+}
+.photo-editor-title {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 1rem;
+}
+.photo-editor-canvas-wrap {
+  position: relative;
+  display: block;
+  line-height: 0;
+  max-height: 55vh;
+  overflow: hidden;
+  border-radius: var(--r-sm);
+  background: var(--bg3);
+  touch-action: none;
+  user-select: none;
+}
+.photo-editor-canvas-wrap img {
+  display: block;
+  width: 100%;
+  max-height: 55vh;
+  object-fit: contain;
+  background: var(--bg3);
+}
+.photo-editor-crop-rect {
+  position: absolute;
+  border: 1.5px dashed var(--accent);
+  background: rgba(184, 150, 90, 0.15);
+  pointer-events: none;
+}
+.photo-editor-busy {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 8, 8, 0.35);
+}
+.photo-editor-hint {
+  font-size: 0.72rem;
+  color: var(--fg3);
+  text-align: center;
+  margin: 0.6rem 0;
+}
+.photo-editor-error {
+  font-size: 0.75rem;
+  color: var(--error);
+  text-align: center;
+  margin: 0 0 0.6rem;
+}
+.photo-editor-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+.photo-editor-actions .btn-reset {
+  flex: 1;
+  font-size: 0.65rem;
+}
+.photo-editor-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 /* ─── Ficha field actions ────────────────── */
 .ficha-field-actions {
   display: flex;
@@ -1596,7 +1701,8 @@ body,
     height: 44px;
     font-size: 1.1rem;
   }
-  .historial-item-delete {
+  .historial-item-delete,
+  .historial-item-vendida {
     min-width: 36px;
     min-height: 44px;
     font-size: 0.85rem;
@@ -1663,7 +1769,7 @@ body,
   align-items: center;
   gap: 0.4rem;
 }
-/* Estado color dots — match the AI's emoji semantics */
+/* Estado color dots — green/yellow/orange by condition */
 .estado-dot {
   width: 7px;
   height: 7px;
@@ -1675,6 +1781,14 @@ body,
 .estado-dot--yellow { background: #d4b070; box-shadow: 0 0 6px rgba(212,176,112,0.5); }
 .estado-dot--orange { background: #d49060; box-shadow: 0 0 6px rgba(212,144,96,0.5); }
 .estado-dot--gray   { background: var(--fg3); }
+/* Marks a field the AI wasn't confident about (e.g. talla guessed with no visible tag) */
+.dudoso-badge {
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: #d49060;
+}
 .meta-input {
   background: var(--bg3);
   border: 1px solid var(--border2);
@@ -1864,11 +1978,17 @@ button:focus-visible,
   outline: none;
 }
 
-/* ─── Foto remove button (×) ─────────────── */
-.foto-remove {
+/* ─── Foto slot buttons (edit / remove) ──── */
+.foto-slot-buttons {
   position: absolute;
   top: 0.4rem;
   right: 0.4rem;
+  z-index: 2;
+  display: flex;
+  gap: 0.3rem;
+}
+.foto-edit,
+.foto-remove {
   width: 22px;
   height: 22px;
   border-radius: 50%;
@@ -1884,11 +2004,17 @@ button:focus-visible,
   justify-content: center;
   opacity: 0;
   transition: opacity 0.15s, background-color 0.15s, color 0.15s;
-  z-index: 2;
   line-height: 1;
   padding: 0;
 }
+.foto-slot.filled:hover .foto-edit,
 .foto-slot.filled:hover .foto-remove { opacity: 1; }
+.foto-edit:hover {
+  background: rgba(184, 150, 90, 0.88);
+  border-color: rgba(184, 150, 90, 0.45);
+  color: #fff;
+  opacity: 1 !important;
+}
 .foto-remove:hover {
   background: rgba(196, 90, 90, 0.88);
   border-color: rgba(196, 90, 90, 0.45);
@@ -1897,7 +2023,35 @@ button:focus-visible,
 }
 @media (max-width: 860px) {
   /* Always show on touch devices */
+  .foto-edit,
   .foto-remove { opacity: 0.75; }
+}
+
+/* ─── Foto grid: drag-to-reorder hint ────── */
+.foto-reorder-hint {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  color: var(--fg3);
+  opacity: 0.6;
+  margin-top: -0.3rem;
+  margin-bottom: 0.75rem;
+}
+.foto-slot.filled {
+  cursor: grab;
+  /* Reordering is drag-driven (Pointer Events, works on touch too) — without
+     this, a touch-drag on the slot just scrolls the page instead. */
+  touch-action: none;
+}
+.foto-slot.filled:active { cursor: grabbing; }
+.foto-slot.is-reorder-source {
+  opacity: 0.4;
+}
+.foto-slot.is-reorder-target {
+  border-color: var(--accent) !important;
+  background: var(--accent-light) !important;
+  transform: scale(1.02);
 }
 
 /* ─── Historial: header right + clear btn ── */
@@ -1906,7 +2060,8 @@ button:focus-visible,
   align-items: center;
   gap: 0.75rem;
 }
-.historial-clear-btn {
+.historial-clear-btn,
+.historial-export-btn {
   font-family: var(--font-mono);
   font-size: 0.58rem;
   letter-spacing: 0.1em;
@@ -1919,10 +2074,14 @@ button:focus-visible,
   opacity: 0;
 }
 .historial:hover .historial-clear-btn,
-.historial-clear-btn:focus-visible { opacity: 1; }
+.historial-clear-btn:focus-visible,
+.historial:hover .historial-export-btn,
+.historial-export-btn:focus-visible { opacity: 1; }
 .historial-clear-btn:hover { color: var(--error); }
+.historial-export-btn:hover { color: var(--accent); }
 @media (max-width: 860px) {
-  .historial-clear-btn { opacity: 0.6; }
+  .historial-clear-btn,
+  .historial-export-btn { opacity: 0.6; }
 }
 
 /* ─── Foto: compressing overlay ─────────── */
@@ -1962,21 +2121,12 @@ button:focus-visible,
     border-top-color: var(--accent) !important;
   }
   /* Disable all decorative animations completely (the * rule shortens but doesn't stop loops) */
-  .hero-title em,
   .btn-generate.state-3,
   .btn-generate.state-3::after,
-  .beta-tag::after,
-  .orb-1, .orb-2,
   .logo-dot,
   .ficha-status-dot,
   .estado-dot {
     animation: none !important;
-  }
-  /* Static fallback for hero gradient text */
-  .hero-title em {
-    background: none !important;
-    -webkit-text-fill-color: var(--accent) !important;
-    color: var(--accent) !important;
   }
   /* Remove blur effects that can cause vestibular discomfort */
   .modal-backdrop,

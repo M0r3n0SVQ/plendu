@@ -1,7 +1,7 @@
 import Link from 'next/link'
 
 export const metadata = {
-  title: 'Página no encontrada — Plendu',
+  title: 'Página no encontrada · Plendu',
 }
 
 export default function NotFound() {

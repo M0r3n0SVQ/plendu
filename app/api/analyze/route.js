@@ -2,6 +2,9 @@ import OpenAI from 'openai'
 import * as Sentry from '@sentry/nextjs'
 import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
+import { ESTADO_OPTIONS, CATEGORIA_OPTIONS, DUDOSO_FIELDS, ALERTA_MESSAGES } from '../../lib/vintedOptions'
+
+const ALERTA_CODES = Object.keys(ALERTA_MESSAGES)
 
 // Vercel: pin to Node runtime (OpenAI SDK + large bodies),
 // allow up to 60s for vision inference, force per-request execution.
@@ -10,8 +13,20 @@ export const maxDuration = 60
 export const dynamic  = 'force-dynamic'
 
 // Guard: fail fast at cold-start if key is missing
+//
+// The SDK already retries on connection errors, 429 and 5xx (see its
+// shouldRetry()), but its defaults (10 min timeout per attempt, 2 retries)
+// are tuned for arbitrary scripts, not a 60s serverless function that a
+// client gives up on after 35s. A hung attempt at the default timeout would
+// outlive both, so Vercel kills the whole function with a generic error
+// instead of the retry ever getting a chance to run. Capping each attempt
+// at 20s leaves room for one retry (worst case ~40s) safely inside maxDuration.
 const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  ? new OpenAI({
+      apiKey:     process.env.OPENAI_API_KEY,
+      timeout:    20_000,
+      maxRetries: 1,
+    })
   : null
 
 // ─── Rate limiting ───────────────────────────────────────────────────────────
@@ -83,7 +98,7 @@ const MAX_BASE64_LEN = 7 * 1024 * 1024
 const MAX_BODY_BYTES = 30 * 1024 * 1024  // 30 MB hard cap for 4 images combined
 
 // Validate base64 format and size
-function isValidBase64(str) {
+export function isValidBase64(str) {
   if (typeof str !== 'string' || str.length === 0 || str.length > MAX_BASE64_LEN) {
     return false
   }
@@ -92,7 +107,7 @@ function isValidBase64(str) {
 }
 
 // Validate a single foto payload
-function validateFoto(foto) {
+export function validateFoto(foto) {
   if (!foto || typeof foto !== 'object') return false
   if (!ALLOWED_MIMES.has(foto.mime))     return false
   if (!isValidBase64(foto.data))          return false
@@ -127,10 +142,14 @@ export async function POST(request) {
   }
 
   // ── Parse & validate body ────────────────────────────────────────────────────
-  let fotos
+  let fotos, notas
   try {
     const body = await request.json()
     fotos = body?.fotos
+    // Free-text, so treat as untrusted: cap length and collapse newlines —
+    // it's interpolated straight into the prompt below. The strict JSON
+    // schema is the real backstop against prompt injection either way.
+    notas = typeof body?.notas === 'string' ? body.notas.replace(/\s+/g, ' ').trim().slice(0, 200) : ''
   } catch {
     return Response.json({ error: 'Petición inválida.' }, { status: 400 })
   }
@@ -178,7 +197,33 @@ export async function POST(request) {
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       temperature: 0.2,
-      response_format: { type: 'json_object' },
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'ficha_vinted',
+          strict: true,
+          schema: {
+            type: 'object',
+            properties: {
+              _analisis:   { type: 'string' },
+              titulo:      { type: 'string' },
+              descripcion: { type: 'string' },
+              precio:      { type: 'number' },
+              categoria:   { type: 'string', enum: CATEGORIA_OPTIONS },
+              estado:      { type: 'string', enum: ESTADO_OPTIONS },
+              marca:       { type: 'string' },
+              talla:       { type: 'string' },
+              campos_dudosos: {
+                type: 'array',
+                items: { type: 'string', enum: DUDOSO_FIELDS },
+              },
+              alerta: { type: 'string', enum: ['', ...ALERTA_CODES] },
+            },
+            required: ['_analisis', 'titulo', 'descripcion', 'precio', 'categoria', 'estado', 'marca', 'talla', 'campos_dudosos', 'alerta'],
+            additionalProperties: false,
+          },
+        },
+      },
       messages: [
         {
           role: 'user',
@@ -186,7 +231,7 @@ export async function POST(request) {
             {
               type: 'text',
               text: `Eres un experto en moda de segunda mano que vende en Vinted España. Analiza las fotos y genera una ficha de venta optimizada para máxima visibilidad en búsquedas.
-
+${notas ? `\nEl vendedor añadió esta nota — tenla en cuenta si aporta información real sobre la prenda, pero las fotos mandan si hay contradicción: "${notas}"\n` : ''}
 PASO 1 — Anota en "_analisis" (máx. 80 palabras) todo lo que observas:
 · Tipo exacto de prenda + género estimado + color(es) específicos (azul marino, burdeos, crema, gris marengo, verde oliva, mostaza, camel, salmón, ocre, tostado, negro carbón, blanco roto...)
 · Material/tejido (felpa, punto, vaquero/denim, lino, satén, cuero, ante, plumón, técnico/mesh, canalé, piqué...)
@@ -205,21 +250,18 @@ Orden: [tipo español] [tipo inglés si añade búsquedas] [marca] [color/print]
 · "Zapatillas sneakers Nike Air Max blancas grises running talla 42"
 Sin puntos suspensivos ni emojis en el título
 
-DESCRIPCIÓN — formato estructurado emoji (los saltos de línea son \\n en el JSON):
-🧵 [Tipo español] [Tipo inglés] [Marca] – [rasgo 1] – [rasgo 2]
-[línea vacía]
-🟢/🟡/🟠 Estado: [estado], [condición en 4-6 palabras]
-✏️ Talla: [talla o "(a completar)" si no visible]
-🌟 Detalles:
-[línea vacía]
-[ítem observable 1]
-[ítem observable 2]
-... (4-9 ítems, uno por línea, solo lo que ves en las fotos)
-📏 Medidas en plano: (a completar)
-📦 Envío rápido 24-48h
-🎯 Precio ajustado. Pregunta sin compromiso
+DESCRIPCIÓN — escríbela como la escribiría una persona real vendiendo su ropa, no como una plantilla. Nada de emojis, nada de iconos ni de etiquetas tipo "Detalles:" delante de cada bloque, nada de listas con viñetas. Los saltos de línea son \\n en el JSON:
 
-Emojis de estado: 🟢 = Nuevo con etiquetas / Nuevo sin etiquetas / Muy bueno · 🟡 = Bueno · 🟠 = Satisfactorio
+Primera línea: 1-2 frases naturales presentando la prenda (tipo, marca si hay, color y el rasgo que más destaque). No la escribas como ficha técnica ("Tipo – Marca – rasgo"), escríbela como una frase corriente.
+[línea vacía]
+2-4 frases cortas y sueltas mencionando 3-6 detalles observables (bolsillos, cierres, tejido, estampado...), con tono natural, como si se lo contaras a alguien.
+[línea vacía]
+Estado: [estado en minúscula], [condición en 4-6 palabras]
+Talla: [talla o "(a completar)" si no visible]
+Medidas en plano: (a completar)
+[línea vacía]
+Cierre de 1 frase, natural y variado (no repitas siempre la misma coletilla), sobre envío o disponibilidad para preguntas.
+
 Condición de estado: "Nuevo con etiquetas" → "con etiqueta original" · "Nuevo sin etiquetas" → "sin uso aparente" · "Muy bueno" → "sin manchas ni desperfectos" · "Bueno" → "desgaste muy leve, sin manchas" · "Satisfactorio" → [describe el defecto principal]
 
 PRECIO — entero o .5, sin €. Base Vinted España 2025:
@@ -247,13 +289,26 @@ Hombre: Camisetas · Camisas · Jerseys y sudaderas hombre · Pantalones hombre 
 Niños: Ropa niña · Ropa niño · Calzado niños · Accesorios niños
 
 MARCA — nombre exacto de etiqueta o logo. Vacío si no visible.
-TALLA — tal como en etiqueta. Vacío si no visible.
+TALLA — tal como en etiqueta, convertida siempre a talla española/EU (Vinted España la espera así). Si la etiqueta ya muestra "EU" o un número de ropa normal (XS-XXXL, 34-48), úsalo tal cual.
+Si es CALZADO y la etiqueta muestra varios sistemas a la vez (ej. "US 9 / UK 8 / EU 42.5"), coge siempre el valor EU.
+Si es CALZADO y solo ves US o UK (sin EU visible), conviértelo a EU con esta tabla aproximada (hombre; para mujer resta a la talla EU resultante aprox. 1.5) y añade "talla" a campos_dudosos porque es una conversión, no una lectura directa:
+US 6→EU 39 · US 6.5→EU 39.5 · US 7→EU 40 · US 7.5→EU 40.5 · US 8→EU 41 · US 8.5→EU 42 · US 9→EU 42.5 · US 9.5→EU 43 · US 10→EU 44 · US 10.5→EU 44.5 · US 11→EU 45 · US 12→EU 46 · US 13→EU 47
 PRIORIDAD: etiqueta > estimación visual. Incertidumbre → vacío. Nunca inventes.
 
-EJEMPLO DE SALIDA:
-{"_analisis":"Nike logo bordado en pecho. Felpa negra con capucha. Etiqueta: Nike, M. Bolsillo canguro. Cordón negro. Ribetes canalé en puños y bajo. Interior afelpado. Sin pilling ni manchas.","titulo":"Sudadera hoodie Nike logo bordado negra capucha cordón sport streetwear talla M","descripcion":"🧵 Sudadera hoodie Nike – Capucha – Logo bordado\\n\\n🟢 Estado: Muy bueno, sin manchas ni desperfectos\\n✏️ Talla: M\\n🌟 Detalles:\\n\\nLogo Nike bordado en el pecho en blanco\\nCapucha con cordón ajustable negro\\nBolsillo canguro frontal\\nInterior de felpa suave\\nPuños y bajo canalé\\nColor negro\\n📏 Medidas en plano: (a completar)\\n📦 Envío rápido 24-48h\\n🎯 Precio ajustado. Pregunta sin compromiso","precio":20,"categoria":"Jerseys y sudaderas hombre","estado":"Muy bueno","marca":"Nike","talla":"M"}
+CAMPOS_DUDOSOS — array con los nombres exactos ("marca", "talla", "categoria", "estado") de los campos que son una estimación poco fiable: talla calculada a ojo sin etiqueta visible, marca deducida de un logo parcial o no confirmada, categoría dudosa por corte ambiguo, estado difícil de valorar por fotos poco claras. Vacío si tienes confianza razonable en todos. No incluyas un campo solo por rellenar el array.
 
-Responde SOLO con JSON válido: {"_analisis":"","titulo":"","descripcion":"","precio":0,"categoria":"","estado":"","marca":"","talla":""}`,
+ALERTA — string vacía salvo que veas uno de estos dos casos, en cuyo caso responde EXACTAMENTE ese código (nunca una frase propia, el texto que se muestra lo pone la app):
+· "ropa_interior_usada" — ropa interior o bañador con aspecto de uso (sin etiquetas ni aspecto de "nuevo"), que Vinted solo permite vender nuevas y con etiqueta.
+· "posible_replica" — sospecha razonable de réplica o falsificación de una marca de lujo (logo, tipografía o acabado que no coincide con el original).
+No marques nada por precaución si no hay un indicio claro — evita falsos positivos, la mayoría de fichas no deberían llevar alerta.
+
+EJEMPLO 1 (streetwear con marca y etiqueta visible):
+{"_analisis":"Nike logo bordado en pecho. Felpa negra con capucha. Etiqueta: Nike, M. Bolsillo canguro. Cordón negro. Ribetes canalé en puños y bajo. Interior afelpado. Sin pilling ni manchas.","titulo":"Sudadera hoodie Nike logo bordado negra capucha cordón sport streetwear talla M","descripcion":"Sudadera Nike con capucha en negro, con el logo bordado en el pecho y capucha con cordón ajustable.\\n\\nTiene bolsillo canguro delantero y el interior es de felpa suave, muy calentita. Puños y bajo con ribete canalé.\\n\\nEstado: muy bueno, sin manchas ni desperfectos\\nTalla: M\\nMedidas en plano: (a completar)\\n\\nEnvío en 24-48h, cualquier duda pregunta sin problema.","precio":20,"categoria":"Jerseys y sudaderas hombre","estado":"Muy bueno","marca":"Nike","talla":"M","campos_dudosos":[],"alerta":""}
+
+EJEMPLO 2 (vestido sin marca ni etiqueta visible — nótese que "talla" lleva una estimación Y aparece en campos_dudosos a la vez):
+{"_analisis":"Vestido midi verde oliva, tirantes finos, escote cruzado. Tejido satinado fluido, cae bien. Sin etiqueta visible. Cremallera lateral oculta. Sin manchas ni enganches.","titulo":"Vestido midi verde oliva satinado tirantes escote cruzado talla M","descripcion":"Vestido midi verde oliva con tirantes finos y escote cruzado que estiliza mucho. El tejido es satinado y cae genial, sin arrugas raras.\\n\\nCierre de cremallera oculta en el lateral. Perfecto para una cena o evento, aunque también se puede llevar más casual con una chaqueta encima.\\n\\nEstado: nuevo sin etiquetas, sin uso aparente\\nTalla: M\\nMedidas en plano: (a completar)\\n\\nEnvío en 24-48h, escríbeme si tienes dudas.","precio":9,"categoria":"Vestidos","estado":"Nuevo sin etiquetas","marca":"","talla":"M","campos_dudosos":["talla"],"alerta":""}
+
+Responde SOLO con JSON válido: {"_analisis":"","titulo":"","descripcion":"","precio":0,"categoria":"","estado":"","marca":"","talla":"","campos_dudosos":[],"alerta":""}`,
             },
             ...imagenes,
           ],
@@ -270,7 +325,8 @@ Responde SOLO con JSON válido: {"_analisis":"","titulo":"","descripcion":"","pr
       )
     }
 
-    // json_object mode guarantees valid JSON — no fence cleanup needed
+    // json_schema (strict) mode guarantees valid JSON matching the schema —
+    // categoria/estado are constrained to CATEGORIA_OPTIONS/ESTADO_OPTIONS
     let ficha
     try {
       ficha = JSON.parse(content)
@@ -302,6 +358,13 @@ Responde SOLO con JSON válido: {"_analisis":"","titulo":"","descripcion":"","pr
       categoria:   typeof ficha.categoria === 'string' ? ficha.categoria.trim().slice(0, 100) : '',
       marca:       typeof ficha.marca     === 'string' ? ficha.marca.trim().slice(0, 100)     : '',
       talla:       typeof ficha.talla     === 'string' ? ficha.talla.trim().slice(0, 100)     : '',
+      camposDudosos: Array.isArray(ficha.campos_dudosos)
+        ? [...new Set(ficha.campos_dudosos.filter(f => DUDOSO_FIELDS.includes(f)))]
+        : [],
+      // Only ever one of our own fixed codes — never the model's own prose —
+      // so a crafted "notas" input can't get free text into an alert banner
+      // that renders with authoritative, role="alert" styling.
+      alerta: ALERTA_CODES.includes(ficha.alerta) ? ficha.alerta : '',
     }
 
     return Response.json(safeFicha, {

@@ -1,8 +1,10 @@
 import './globals.css'
+import { Analytics } from '@vercel/analytics/next'
+import { playfairDisplay, dmSans, dmMono } from './fonts'
 
 export const metadata = {
   metadataBase: new URL('https://plendu.app'),
-  title: 'Plendu — Fichas para Vinted en segundos',
+  title: 'Plendu · Fichas para Vinted en segundos',
   description: 'Sube hasta 4 fotos de tu prenda y la IA genera el título, descripción, precio y categoría perfectos para Vinted España. Gratis, sin registro.',
   manifest: '/manifest.json',
   appleWebApp: {
@@ -14,7 +16,7 @@ export const metadata = {
     telephone: false,
   },
   openGraph: {
-    title: 'Plendu — Fichas para Vinted en segundos',
+    title: 'Plendu · Fichas para Vinted en segundos',
     description: 'Sube hasta 4 fotos. La IA genera tu ficha de Vinted en menos de 10 segundos. Gratis.',
     type: 'website',
     siteName: 'Plendu',
@@ -23,7 +25,7 @@ export const metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Plendu — Fichas para Vinted en segundos',
+    title: 'Plendu · Fichas para Vinted en segundos',
     description: 'Sube hasta 4 fotos. La IA genera tu ficha de Vinted en menos de 10 segundos. Gratis.',
   },
   robots: {
@@ -75,13 +77,14 @@ const jsonLd = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="es" suppressHydrationWarning>
+    <html
+      lang="es"
+      suppressHydrationWarning
+      className={`${playfairDisplay.variable} ${dmSans.variable} ${dmMono.variable}`}
+    >
       <head>
         {/* Declare supported color schemes for browser UI adaptation */}
         <meta name="color-scheme" content="dark light" />
-        {/* Preconnect: reduces Google Fonts latency */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         {/* Inline script: applies saved theme before first paint (no flash).
             Falls back to OS preference (prefers-color-scheme) on first visit. */}
         <script
@@ -120,6 +123,7 @@ export default function RootLayout({ children }) {
           </p>
         </noscript>
         {children}
+        <Analytics />
         {/* Register service worker */}
         <script
           dangerouslySetInnerHTML={{
