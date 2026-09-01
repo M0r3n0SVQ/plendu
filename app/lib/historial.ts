@@ -10,22 +10,51 @@ const FICHA_FIELD_MAX_LEN = 1000
 export const MEDIDAS_MAX_LEN = 100
 export const MAX_HISTORIAL = 10
 
-export function sanitizeFicha(raw) {
-  if (!raw || typeof raw !== 'object') return null
-  const safe = {}
-  for (const f of ['titulo', 'descripcion', 'estado', 'categoria', 'marca', 'talla', 'alerta']) {
-    if (typeof raw[f] === 'string') safe[f] = raw[f].slice(0, FICHA_FIELD_MAX_LEN)
+const FICHA_STRING_FIELDS = ['titulo', 'descripcion', 'estado', 'categoria', 'marca', 'talla', 'alerta'] as const
+
+export interface SafeFicha {
+  titulo?: string
+  descripcion?: string
+  estado?: string
+  categoria?: string
+  marca?: string
+  talla?: string
+  alerta?: string
+  medidas?: string
+  precio?: number
+  camposDudosos: string[]
+}
+
+export interface HistorialItem {
+  id: number
+  fecha: string
+  ficha: SafeFicha
+  thumbnail: string | null
+  vendida: boolean
+  precioVenta: number | null
+  updatedAt: number
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+export function sanitizeFicha(raw: unknown): SafeFicha | null {
+  if (!isRecord(raw)) return null
+  const safe: SafeFicha = { camposDudosos: [] }
+  for (const f of FICHA_STRING_FIELDS) {
+    if (typeof raw[f] === 'string') safe[f] = (raw[f] as string).slice(0, FICHA_FIELD_MAX_LEN)
   }
   if (typeof raw.medidas === 'string') safe.medidas = raw.medidas.slice(0, MEDIDAS_MAX_LEN)
   if (typeof raw.precio === 'number' && isFinite(raw.precio)) safe.precio = raw.precio
   safe.camposDudosos = Array.isArray(raw.camposDudosos)
-    ? raw.camposDudosos.filter(f => DUDOSO_FIELDS.includes(f))
+    ? raw.camposDudosos.filter((f): f is string => DUDOSO_FIELDS.includes(f))
     : []
   return safe
 }
 
-export function sanitizeHistorialItem(raw) {
-  if (!raw || typeof raw !== 'object') return null
+export function sanitizeHistorialItem(raw: unknown): HistorialItem | null {
+  if (!isRecord(raw)) return null
   if (typeof raw.id !== 'number')    return null
   if (typeof raw.fecha !== 'string') return null
   const ficha = sanitizeFicha(raw.ficha)
@@ -49,17 +78,20 @@ export function sanitizeHistorialItem(raw) {
   }
 }
 
-export function sanitizeHistorial(raw, maxItems = MAX_HISTORIAL) {
+export function sanitizeHistorial(raw: unknown, maxItems = MAX_HISTORIAL): HistorialItem[] {
   if (!Array.isArray(raw)) return []
-  return raw.map(sanitizeHistorialItem).filter(Boolean).slice(0, maxItems)
+  return raw
+    .map(sanitizeHistorialItem)
+    .filter((item): item is HistorialItem => item !== null)
+    .slice(0, maxItems)
 }
 
 // Union by id — on a shared id, keeps whichever side has the more recent
 // updatedAt instead of just letting the second argument win — sorted
 // newest-first, capped. Used when pulling a sync code merges with whatever's
 // already local instead of silently discarding either side's edits.
-export function mergeHistorial(a, b, maxItems = MAX_HISTORIAL) {
-  const byId = new Map()
+export function mergeHistorial(a: HistorialItem[], b: HistorialItem[], maxItems = MAX_HISTORIAL): HistorialItem[] {
+  const byId = new Map<number, HistorialItem>()
   for (const item of [...a, ...b]) {
     const existing = byId.get(item.id)
     if (!existing || item.updatedAt > existing.updatedAt) byId.set(item.id, item)

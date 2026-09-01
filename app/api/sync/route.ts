@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/nextjs'
-import { redis, upstashConfigured } from '../../lib/redis'
+import { redis } from '../../lib/redis'
 import { createRateLimiter, getClientIP } from '../../lib/rateLimit'
 import { sanitizeHistorial, MAX_HISTORIAL } from '../../lib/historial'
 
@@ -23,13 +23,13 @@ const MAX_BODY_BYTES = 3 * 1024 * 1024 // 10 items x <200KB thumbnail + text, wi
 // Client generates "XXXX-XXXX-XXXX" (12 alphanumeric chars) from a readable
 // alphabet — matched exactly here so a truncated or mistyped guess is
 // rejected client-side instead of being looked up in Redis.
-function normalizeCode(raw) {
+function normalizeCode(raw: unknown): string | null {
   if (typeof raw !== 'string') return null
   const code = raw.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
   return /^[A-Z0-9]{12}$/.test(code) ? code : null
 }
 
-const redisKey = (code) => `plendu:sync:${code}`
+const redisKey = (code: string) => `plendu:sync:${code}`
 
 function serviceUnavailable() {
   return Response.json(
@@ -38,7 +38,7 @@ function serviceUnavailable() {
   )
 }
 
-export async function GET(request) {
+export async function GET(request: Request): Promise<Response> {
   const { limited, retryAfter } = await checkRateLimit(getClientIP(request))
   if (limited) {
     return Response.json(
@@ -46,7 +46,7 @@ export async function GET(request) {
       { status: 429, headers: { 'Retry-After': String(retryAfter) } }
     )
   }
-  if (!upstashConfigured) return serviceUnavailable()
+  if (!redis) return serviceUnavailable()
 
   const code = normalizeCode(new URL(request.url).searchParams.get('code'))
   if (!code) {
@@ -69,7 +69,7 @@ export async function GET(request) {
 
 // Lets a user delete their synced copy on demand instead of only relying on
 // the 90-day TTL — the privacy policy promises this is possible.
-export async function DELETE(request) {
+export async function DELETE(request: Request): Promise<Response> {
   const { limited, retryAfter } = await checkRateLimit(getClientIP(request))
   if (limited) {
     return Response.json(
@@ -77,7 +77,7 @@ export async function DELETE(request) {
       { status: 429, headers: { 'Retry-After': String(retryAfter) } }
     )
   }
-  if (!upstashConfigured) return serviceUnavailable()
+  if (!redis) return serviceUnavailable()
 
   const code = normalizeCode(new URL(request.url).searchParams.get('code'))
   if (!code) {
@@ -93,7 +93,7 @@ export async function DELETE(request) {
   }
 }
 
-export async function POST(request) {
+export async function POST(request: Request): Promise<Response> {
   const { limited, retryAfter } = await checkRateLimit(getClientIP(request))
   if (limited) {
     return Response.json(
@@ -101,7 +101,7 @@ export async function POST(request) {
       { status: 429, headers: { 'Retry-After': String(retryAfter) } }
     )
   }
-  if (!upstashConfigured) return serviceUnavailable()
+  if (!redis) return serviceUnavailable()
 
   const clRaw = request.headers.get('content-length')
   if (!clRaw) {
@@ -112,7 +112,8 @@ export async function POST(request) {
     return Response.json({ error: 'Petición demasiado grande.' }, { status: 413 })
   }
 
-  let code, historial
+  let code: string | null
+  let historial: ReturnType<typeof sanitizeHistorial>
   try {
     const body = await request.json()
     code = normalizeCode(body?.code)

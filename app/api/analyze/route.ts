@@ -1,9 +1,10 @@
 import OpenAI from 'openai'
 import * as Sentry from '@sentry/nextjs'
-import { ESTADO_OPTIONS, CATEGORIA_OPTIONS, DUDOSO_FIELDS, ALERTA_MESSAGES } from '../../lib/vintedOptions'
+import { z } from 'zod'
+import { ESTADO_OPTIONS, CATEGORIA_OPTIONS, DUDOSO_FIELDS, ALERTA_MESSAGES, type AlertaCode } from '../../lib/vintedOptions'
 import { createRateLimiter, getClientIP } from '../../lib/rateLimit'
 
-const ALERTA_CODES = Object.keys(ALERTA_MESSAGES)
+const ALERTA_CODES = Object.keys(ALERTA_MESSAGES) as AlertaCode[]
 
 // Vercel: pin to Node runtime (OpenAI SDK + large bodies),
 // allow up to 60s for vision inference, force per-request execution.
@@ -40,8 +41,13 @@ const ALLOWED_MIMES  = new Set(['image/jpeg', 'image/png', 'image/webp'])
 const MAX_BASE64_LEN = 7 * 1024 * 1024
 const MAX_BODY_BYTES = 30 * 1024 * 1024  // 30 MB hard cap for 4 images combined
 
+interface FotoPayload {
+  mime: string
+  data: string
+}
+
 // Validate base64 format and size
-export function isValidBase64(str) {
+export function isValidBase64(str: unknown): str is string {
   if (typeof str !== 'string' || str.length === 0 || str.length > MAX_BASE64_LEN) {
     return false
   }
@@ -50,14 +56,37 @@ export function isValidBase64(str) {
 }
 
 // Validate a single foto payload
-export function validateFoto(foto) {
+export function validateFoto(foto: unknown): foto is FotoPayload {
   if (!foto || typeof foto !== 'object') return false
-  if (!ALLOWED_MIMES.has(foto.mime))     return false
-  if (!isValidBase64(foto.data))          return false
+  const f = foto as Record<string, unknown>
+  if (typeof f.mime !== 'string' || !ALLOWED_MIMES.has(f.mime)) return false
+  if (!isValidBase64(f.data))                                   return false
   return true
 }
 
-export async function POST(request) {
+// ─── AI response validation ──────────────────────────────────────────────────
+// Structured Outputs (json_schema, strict) already guarantees the shape and
+// enum values coming back from the model — this is defense-in-depth against
+// length/type edge cases before anything reaches the client, and the single
+// declared source of truth for what a "safe" ficha looks like.
+const fichaResponseSchema = z.object({
+  titulo:      z.string().trim().min(1).max(100),
+  descripcion: z.string().trim().min(1).max(1000),
+  precio:      z.number().finite().min(0).transform(v => Math.min(9999, v)),
+  estado:      z.string().trim().max(100).catch(''),
+  categoria:   z.string().trim().max(100).catch(''),
+  marca:       z.string().trim().max(100).catch(''),
+  talla:       z.string().trim().max(100).catch(''),
+  campos_dudosos: z.array(z.string()).catch([])
+    .transform(arr => [...new Set(arr.filter(f => (DUDOSO_FIELDS as readonly string[]).includes(f)))]),
+  // Only ever one of our own fixed codes — never the model's own prose — so
+  // a crafted "notas" input can't get free text into an alert banner that
+  // renders with authoritative, role="alert" styling.
+  alerta: z.string().catch('')
+    .transform((a): AlertaCode | '' => (ALERTA_CODES.includes(a as AlertaCode) ? (a as AlertaCode) : '')),
+})
+
+export async function POST(request: Request): Promise<Response> {
   // ── Rate limit ───────────────────────────────────────────────────────────────
   const { limited, retryAfter } = await checkRateLimit(getClientIP(request))
   if (limited) {
@@ -85,7 +114,8 @@ export async function POST(request) {
   }
 
   // ── Parse & validate body ────────────────────────────────────────────────────
-  let fotos, notas
+  let fotos: Record<string, unknown>
+  let notas: string
   try {
     const body = await request.json()
     fotos = body?.fotos
@@ -111,7 +141,7 @@ export async function POST(request) {
   }
 
   // Validate optional photos
-  for (const key of ['etiqueta', 'trasera', 'detalle']) {
+  for (const key of ['etiqueta', 'trasera', 'detalle'] as const) {
     if (fotos[key] != null && !validateFoto(fotos[key])) {
       return Response.json(
         { error: `Foto "${key}" inválida. Usa JPG, PNG o WebP de máx. 5 MB.` },
@@ -127,9 +157,9 @@ export async function POST(request) {
     { foto: fotos.trasera,   descripcion: 'parte trasera de la prenda' },
     { foto: fotos.detalle,   descripcion: 'detalle de la prenda' },
   ]
-    .filter(i => i.foto?.data)
+    .filter((i): i is { foto: FotoPayload; descripcion: string } => validateFoto(i.foto))
     .map(i => ({
-      type: 'image_url',
+      type: 'image_url' as const,
       image_url: {
         // mime is validated — guaranteed to be one of ALLOWED_MIMES
         url: `data:${i.foto.mime};base64,${i.foto.data}`,
@@ -269,10 +299,12 @@ Responde SOLO con JSON válido: {"_analisis":"","titulo":"","descripcion":"","pr
     }
 
     // json_schema (strict) mode guarantees valid JSON matching the schema —
-    // categoria/estado are constrained to CATEGORIA_OPTIONS/ESTADO_OPTIONS
-    let ficha
+    // Zod is the declared, single source of truth for what happens next:
+    // reject the whole response if titulo/descripcion/precio are unusable,
+    // fall back field-by-field to safe defaults for everything else.
+    let raw: unknown
     try {
-      ficha = JSON.parse(content)
+      raw = JSON.parse(content)
     } catch {
       return Response.json(
         { error: 'Error procesando la respuesta de la IA. Inténtalo de nuevo.' },
@@ -280,44 +312,26 @@ Responde SOLO con JSON válido: {"_analisis":"","titulo":"","descripcion":"","pr
       )
     }
 
-    // Validate required fields before sending to client
-    if (
-      typeof ficha?.titulo      !== 'string' || !ficha.titulo.trim() ||
-      typeof ficha?.descripcion !== 'string' || !ficha.descripcion.trim() ||
-      typeof ficha?.precio      !== 'number' || !isFinite(ficha.precio) || ficha.precio < 0
-    ) {
+    const parsed = fichaResponseSchema.safeParse(raw)
+    if (!parsed.success) {
       return Response.json(
         { error: 'La IA devolvió una respuesta incompleta. Inténtalo de nuevo.' },
         { status: 502 }
       )
     }
 
-    // Sanitize all fields before returning to client
-    const safeFicha = {
-      titulo:      ficha.titulo.trim().slice(0, 100),
-      descripcion: ficha.descripcion.trim().slice(0, 1000),
-      precio:      Math.max(0, Math.min(9999, Number(ficha.precio))),
-      estado:      typeof ficha.estado    === 'string' ? ficha.estado.trim().slice(0, 100)    : '',
-      categoria:   typeof ficha.categoria === 'string' ? ficha.categoria.trim().slice(0, 100) : '',
-      marca:       typeof ficha.marca     === 'string' ? ficha.marca.trim().slice(0, 100)     : '',
-      talla:       typeof ficha.talla     === 'string' ? ficha.talla.trim().slice(0, 100)     : '',
-      camposDudosos: Array.isArray(ficha.campos_dudosos)
-        ? [...new Set(ficha.campos_dudosos.filter(f => DUDOSO_FIELDS.includes(f)))]
-        : [],
-      // Only ever one of our own fixed codes — never the model's own prose —
-      // so a crafted "notas" input can't get free text into an alert banner
-      // that renders with authoritative, role="alert" styling.
-      alerta: ALERTA_CODES.includes(ficha.alerta) ? ficha.alerta : '',
-    }
+    const { campos_dudosos: camposDudosos, ...rest } = parsed.data
+    const safeFicha = { ...rest, camposDudosos }
 
     return Response.json(safeFicha, {
       headers: { 'Cache-Control': 'no-store' },
     })
-  } catch (err) {
-    const status = err.status === 429 ? 429 : err.status === 401 ? 401 : 500
+  } catch (err: unknown) {
+    const status = err instanceof OpenAI.APIError && err.status === 429 ? 429 :
+                   err instanceof OpenAI.APIError && err.status === 401 ? 401 : 500
     const message =
-      err.status === 429 ? 'Demasiadas peticiones. Espera un momento.' :
-      err.status === 401 ? 'Clave de API inválida. Contacta con soporte.' :
+      status === 429 ? 'Demasiadas peticiones. Espera un momento.' :
+      status === 401 ? 'Clave de API inválida. Contacta con soporte.' :
       'Error al analizar la prenda. Inténtalo de nuevo.'
 
     // Only surface unexpected errors to Sentry. 429/401 are upstream signals

@@ -5,7 +5,8 @@
 // Fields the AI can flag as an uncertain estimate (see "campos_dudosos" in
 // the schema). Shared so the server's validation and the client's "ESTIMADO"
 // badge can never drift apart on which field names are recognized.
-export const DUDOSO_FIELDS = ['marca', 'talla', 'categoria', 'estado']
+export const DUDOSO_FIELDS = ['marca', 'talla', 'categoria', 'estado'] as const
+export type DudosoField = (typeof DUDOSO_FIELDS)[number]
 
 // Fixed, developer-authored warning copy for the "alerta" banner. The AI only
 // ever returns one of these codes (never free text) — it renders with
@@ -15,7 +16,8 @@ export const DUDOSO_FIELDS = ['marca', 'talla', 'categoria', 'estado']
 export const ALERTA_MESSAGES = {
   ropa_interior_usada: 'Esta prenda parece ropa interior o bañador con uso. Vinted solo permite vender este tipo de prendas nuevas y con etiqueta — revisa sus normas antes de publicar.',
   posible_replica: 'El logo, la tipografía o el acabado no terminan de coincidir con el original. Antes de publicarla como una prenda de marca, confirma que no sea una réplica.',
-}
+} as const
+export type AlertaCode = keyof typeof ALERTA_MESSAGES
 
 export const ESTADO_OPTIONS = [
   'Nuevo con etiquetas',
@@ -23,7 +25,8 @@ export const ESTADO_OPTIONS = [
   'Muy bueno',
   'Bueno',
   'Satisfactorio',
-]
+] as const
+export type Estado = (typeof ESTADO_OPTIONS)[number]
 
 export const CATEGORIA_OPTIONS = [
   // Mujer
@@ -37,4 +40,5 @@ export const CATEGORIA_OPTIONS = [
   'Calzado hombre', 'Accesorios hombre',
   // Niños
   'Ropa niña', 'Ropa niño', 'Calzado niños', 'Accesorios niños',
-]
+] as const
+export type Categoria = (typeof CATEGORIA_OPTIONS)[number]

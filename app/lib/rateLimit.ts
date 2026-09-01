@@ -1,7 +1,7 @@
 import { Ratelimit } from '@upstash/ratelimit'
-import { redis, upstashConfigured } from './redis'
+import { redis } from './redis'
 
-export function getClientIP(request) {
+export function getClientIP(request: Request): string {
   return (
     request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
     request.headers.get('x-real-ip') ||
@@ -9,12 +9,25 @@ export function getClientIP(request) {
   )
 }
 
+interface RateLimiterOptions {
+  prefix: string
+  windowMs: number
+  max: number
+}
+
+interface RateLimitResult {
+  limited: boolean
+  retryAfter: number
+}
+
 // Returns an async checkRateLimit(ip) -> { limited, retryAfter }, backed by
 // Upstash when configured, or a per-instance in-memory Map otherwise. Each
 // call owns its own state (own Upstash prefix, own Map), so routes with
 // different limits never share a budget.
-export function createRateLimiter({ prefix, windowMs, max }) {
-  const ratelimit = upstashConfigured
+export function createRateLimiter({ prefix, windowMs, max }: RateLimiterOptions) {
+  // Narrowing on `redis` itself (not a separate boolean flag) is what lets
+  // TypeScript know it's non-null inside this block.
+  const ratelimit = redis
     ? new Ratelimit({
         redis,
         limiter:  Ratelimit.slidingWindow(max, `${Math.round(windowMs / 1000)} s`),
@@ -23,9 +36,9 @@ export function createRateLimiter({ prefix, windowMs, max }) {
       })
     : null
 
-  const memoryMap = new Map()
+  const memoryMap = new Map<string, { windowStart: number; count: number }>()
 
-  function isLimitedInMemory(ip) {
+  function isLimitedInMemory(ip: string): boolean {
     const now = Date.now()
     if (memoryMap.size > 10_000) memoryMap.clear()
 
@@ -41,14 +54,15 @@ export function createRateLimiter({ prefix, windowMs, max }) {
 
   // On Upstash error we fail OPEN: legitimate users shouldn't be blocked by
   // our infra failing. Downstream cost/size caps are the real safety net.
-  return async function checkRateLimit(ip) {
+  return async function checkRateLimit(ip: string): Promise<RateLimitResult> {
     if (ratelimit) {
       try {
         const { success, reset } = await ratelimit.limit(ip)
         const retryAfter = Math.max(1, Math.ceil((reset - Date.now()) / 1000))
         return { limited: !success, retryAfter }
       } catch (err) {
-        console.error(`[ratelimit:${prefix}] upstash failed, allowing request:`, err?.message)
+        const message = err instanceof Error ? err.message : String(err)
+        console.error(`[ratelimit:${prefix}] upstash failed, allowing request:`, message)
         return { limited: false, retryAfter: 60 }
       }
     }

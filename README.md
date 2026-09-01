@@ -21,7 +21,8 @@ Es PWA, así que se puede instalar en el móvil. Tiene tema claro y oscuro, y un
 - Next.js 16 con App Router (output standalone)
 - React 19
 - Tailwind 4 + CSS plano
-- OpenAI gpt-4o-mini para visión
+- OpenAI gpt-4o-mini para visión, validado con Zod antes de devolverlo al cliente
+- TypeScript en `app/api` y `app/lib` (migración incremental, el resto sigue en JS)
 - Upstash Redis para rate limit y sincronización de historial
 - Sentry para monitoring
 - Vitest para tests, Lighthouse CI en cada pull request
@@ -42,7 +43,7 @@ npm run dev
 
 Y en [http://localhost:3000](http://localhost:3000).
 
-Scripts: `npm run dev`, `npm run build`, `npm run start`, `npm run lint`.
+Scripts: `npm run dev`, `npm run build`, `npm run start`, `npm run lint`, `npm run typecheck`, `npm run test`.
 
 Si prefieres Docker, hay `docker compose up --build`. El Dockerfile es multi-stage con el output standalone de Next.
 
@@ -75,9 +76,9 @@ Proyecto Next.js en [sentry.io](https://sentry.io), copias el DSN de Client Keys
 
 ```
 app/
-  api/
-    analyze/route.js     POST con las fotos, devuelve la ficha
-    sync/route.js        GET/POST/DELETE del historial por código de sincronización
+  api/                 TypeScript
+    analyze/route.ts     POST con las fotos, valida la respuesta de la IA con Zod
+    sync/route.ts        GET/POST/DELETE del historial por código de sincronización
     pwa-icon/route.js    Icono PWA dinámico
   components/
     ImageUploader.js     Subida, compresión, panel resultado, historial
@@ -86,13 +87,13 @@ app/
     OnboardingModal.js   Modal de la primera visita
     PWAInstall.js        Prompt de "añadir a pantalla de inicio"
     ThemeToggle.js
-  lib/
-    historial.js       Saneado de fichas/historial (compartido cliente + servidor)
-    rateLimit.js       Rate limiting con fallback en memoria
-    redis.js           Cliente de Upstash
-    syncClient.js       Fetch wrappers de /api/sync
-    imageUtils.js       Helpers de canvas (cargar imagen, exportar blob)
-    vintedOptions.js    Constantes de categorías/estados/alertas
+  lib/                 TypeScript
+    historial.ts       Saneado de fichas/historial (compartido cliente + servidor)
+    rateLimit.ts       Rate limiting con fallback en memoria
+    redis.ts           Cliente de Upstash
+    syncClient.ts       Fetch wrappers de /api/sync
+    imageUtils.ts       Helpers de canvas (cargar imagen, exportar blob)
+    vintedOptions.ts    Constantes de categorías/estados/alertas
   guias/               Guías de contenido (SEO)
   privacidad/page.js
   layout.js              Metadata, JSON-LD, SW, theme inline
@@ -151,10 +152,11 @@ Si llega a ser un producto serio:
 
 Mantenimiento:
 
-- [ ] Migrar a TypeScript poco a poco, empezando por `app/api`
+- [x] Migrar a TypeScript poco a poco, empezando por `app/api` (hecho: `app/api` y `app/lib`; el resto sigue en JS)
+- [x] Validar la respuesta de la IA con Zod
 - [ ] Sacar el panel derecho del portal y meterlo en estado React
-- [ ] Validar la respuesta de la IA con Zod
 - [ ] Partir `ImageUploader.js` en archivos separados
+- [ ] Seguir la migración a TypeScript por los componentes (`.tsx`)
 
 ## Privacidad
 

@@ -194,6 +194,42 @@ describe('POST /api/analyze — happy path (mocked OpenAI)', () => {
     const body = await res.json()
     expect(body.camposDudosos).toEqual(['talla'])
   })
+
+  it('502s when the AI response is missing a required field (titulo)', async () => {
+    createMock.mockResolvedValueOnce({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            _analisis: 'x', descripcion: 'x', precio: 1,
+            categoria: 'Camisetas y tops', estado: 'Bueno', marca: '', talla: '',
+            campos_dudosos: [], alerta: '',
+          }),
+        },
+      }],
+    })
+    const req = makeRequest({ fotos: { principal: validFoto } })
+    const res = await POST(req)
+    expect(res.status).toBe(502)
+  })
+
+  it('clamps an out-of-range precio instead of rejecting the whole response', async () => {
+    createMock.mockResolvedValueOnce({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            _analisis: 'x', titulo: 'x', descripcion: 'x', precio: 50000,
+            categoria: 'Camisetas y tops', estado: 'Bueno', marca: '', talla: '',
+            campos_dudosos: [], alerta: '',
+          }),
+        },
+      }],
+    })
+    const req = makeRequest({ fotos: { principal: validFoto } })
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.precio).toBe(9999)
+  })
 })
 
 describe('POST /api/analyze — rate limiting (in-memory fallback, no Upstash configured)', () => {
