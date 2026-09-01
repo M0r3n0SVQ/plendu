@@ -8,7 +8,11 @@ Web: [plendu.app](https://plendu.vercel.app/)
 
 ## Cómo funciona
 
-Las fotos se redimensionan y comprimen en el navegador antes de enviarse. La API solo las pasa a OpenAI durante el análisis, no las guarda. El historial de las últimas 10 fichas se queda en `localStorage`.
+Las fotos se redimensionan y comprimen en el navegador antes de enviarse. La API solo las pasa a OpenAI durante el análisis, no las guarda. El historial de las últimas 10 fichas se queda en `localStorage`, con editor de fotos (recortar/rotar) integrado.
+
+Sincronización opcional entre dispositivos: se genera un código de 12 caracteres sin cuenta ni email, se introduce en el otro dispositivo y trae el historial. Se guarda en Redis con TTL de 90 días, borrable a demanda desde la propia app.
+
+Cada ficha se puede compartir por Web Share API o exportar como imagen para stories de Instagram/TikTok (foto + título + precio, compuesta en canvas). También hay unas guías en `/guias` con contenido propio para búsquedas informativas (fotografiar ropa, poner precio, tomar medidas).
 
 Es PWA, así que se puede instalar en el móvil. Tiene tema claro y oscuro, y una pantalla de fallback cuando no hay conexión.
 
@@ -18,8 +22,9 @@ Es PWA, así que se puede instalar en el móvil. Tiene tema claro y oscuro, y un
 - React 19
 - Tailwind 4 + CSS plano
 - OpenAI gpt-4o-mini para visión
-- Upstash Redis para rate limit
+- Upstash Redis para rate limit y sincronización de historial
 - Sentry para monitoring
+- Vitest para tests, Lighthouse CI en cada pull request
 - Service Worker propio
 
 ## Desarrollo
@@ -48,7 +53,7 @@ Solo `OPENAI_API_KEY` es obligatoria. Las demás añaden funcionalidad si están
 | Variable | Para qué |
 |---|---|
 | `OPENAI_API_KEY` | Llamadas a la IA. Sin ella, `/api/analyze` devuelve 503. |
-| `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` | Rate limit compartido entre instancias. Sin esto cae a uno en memoria. |
+| `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` | Rate limit compartido entre instancias y la sincronización de historial. El rate limit cae a uno en memoria sin esto; la sincronización devuelve 503. |
 | `NEXT_PUBLIC_SENTRY_DSN` | Captura de errores. Sin esto Sentry no se inicializa. |
 | `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` | Subir sourcemaps a Sentry en el build. Opcional. |
 
@@ -72,12 +77,23 @@ Proyecto Next.js en [sentry.io](https://sentry.io), copias el DSN de Client Keys
 app/
   api/
     analyze/route.js     POST con las fotos, devuelve la ficha
+    sync/route.js        GET/POST/DELETE del historial por código de sincronización
     pwa-icon/route.js    Icono PWA dinámico
   components/
     ImageUploader.js     Subida, compresión, panel resultado, historial
+    PhotoEditor.js       Recortar y rotar fotos en canvas
+    SyncModal.js         UI de la sincronización por código
     OnboardingModal.js   Modal de la primera visita
     PWAInstall.js        Prompt de "añadir a pantalla de inicio"
     ThemeToggle.js
+  lib/
+    historial.js       Saneado de fichas/historial (compartido cliente + servidor)
+    rateLimit.js       Rate limiting con fallback en memoria
+    redis.js           Cliente de Upstash
+    syncClient.js       Fetch wrappers de /api/sync
+    imageUtils.js       Helpers de canvas (cargar imagen, exportar blob)
+    vintedOptions.js    Constantes de categorías/estados/alertas
+  guias/               Guías de contenido (SEO)
   privacidad/page.js
   layout.js              Metadata, JSON-LD, SW, theme inline
   page.js
@@ -110,25 +126,27 @@ Para antes de mover la app más en serio:
 - [x] Rate limit con Upstash
 - [x] Sentry
 - [x] CI con GitHub Actions
-- [ ] Tests del endpoint `/api/analyze` con Vitest
-- [ ] Analítica (Vercel Analytics o Plausible)
+- [x] Tests con Vitest (`/api/analyze` y `/api/sync`, 35 tests)
+- [x] Analítica (Vercel Analytics)
+- [x] Lighthouse en cada pull request, con umbrales calibrados
+- [x] Sincronización de historial entre dispositivos, sin cuenta ni login (código + Upstash)
+- [x] Contenido propio para búsquedas informativas (`/guias`)
+- [x] Compartir ficha como imagen para stories de Instagram/TikTok
 - [ ] Logo/favicon de verdad, no el dinámico actual
 
 Si crece y tiene sentido monetizar:
 
-- [ ] Login opcional (NextAuth) para sincronizar historial entre dispositivos
-- [ ] Historial en Postgres cuando hay cuenta
-- [ ] Cuota: gratis hasta X fichas/día, ilimitado con cuenta o suscripción
+- [ ] Cuota: gratis hasta X fichas/día, ilimitado con suscripción
 - [ ] Stripe con un plan "Pro" barato
 - [ ] Probar Claude Sonnet o gpt-4o para descripciones más finas
 - [ ] Detección de defectos como segundo pase
-- [ ] i18n para Vinted FR/IT/DE/PT
+- [ ] i18n para Vinted FR/IT/DE/UK/PT
+- [ ] Precio sugerido con datos reales de artículos vendidos
 
 Si llega a ser un producto serio:
 
 - [ ] Integración con Vinted (API si la abren, o extensión que rellene el formulario)
 - [ ] Multi-prenda en una sola subida
-- [ ] Sugerencia de precio basada en búsquedas reales
 - [ ] App nativa para iOS/Android
 
 Mantenimiento:
@@ -140,7 +158,7 @@ Mantenimiento:
 
 ## Privacidad
 
-Las fotos no se guardan en ningún servidor mío. Llegan a la API, se mandan a OpenAI una vez y se descartan. El historial y la preferencia de tema viven solo en tu navegador.
+Las fotos no se guardan en ningún servidor mío. Llegan a la API, se mandan a OpenAI una vez y se descartan. El historial y la preferencia de tema viven en tu navegador; solo si activas la sincronización entre dispositivos viaja por HTTPS y se guarda una copia en Redis, bajo un código que nadie más tiene, y se puede borrar cuando quieras.
 
 Más en `/privacidad`.
 
