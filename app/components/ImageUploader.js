@@ -2,8 +2,11 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { ESTADO_OPTIONS, CATEGORIA_OPTIONS, DUDOSO_FIELDS, ALERTA_MESSAGES } from '../lib/vintedOptions'
+import { ESTADO_OPTIONS, CATEGORIA_OPTIONS, ALERTA_MESSAGES } from '../lib/vintedOptions'
+import { sanitizeHistorial, mergeHistorial, MAX_HISTORIAL, MEDIDAS_MAX_LEN } from '../lib/historial'
+import { SYNC_CODE_KEY, pushSync } from '../lib/syncClient'
 import PhotoEditor from './PhotoEditor'
+import SyncModal from './SyncModal'
 
 const SLOTS = [
   { key: 'principal', label: 'Principal', icon: '⊡', required: true,  hint: 'foto frontal',  gridClass: 'slot-principal' },
@@ -15,7 +18,6 @@ const SLOTS = [
 const MAX_MB = 5
 const ALLOWED = ['image/jpeg', 'image/png', 'image/webp']
 const HISTORIAL_KEY = 'plendu_historial'
-const MAX_HISTORIAL = 10
 
 const TALLA_OPTIONS = [
   // Letter sizes
@@ -145,58 +147,35 @@ function copyToClipboard(text) {
   })
 }
 
-const FICHA_FIELD_MAX_LEN = 1000
-const MEDIDAS_MAX_LEN     = 100
-
-function sanitizeFicha(raw) {
-  if (!raw || typeof raw !== 'object') return null
-  const safe = {}
-  for (const f of ['titulo', 'descripcion', 'estado', 'categoria', 'marca', 'talla', 'alerta']) {
-    if (typeof raw[f] === 'string') safe[f] = raw[f].slice(0, FICHA_FIELD_MAX_LEN)
-  }
-  if (typeof raw.medidas === 'string') safe.medidas = raw.medidas.slice(0, MEDIDAS_MAX_LEN)
-  if (typeof raw.precio === 'number' && isFinite(raw.precio)) safe.precio = raw.precio
-  safe.camposDudosos = Array.isArray(raw.camposDudosos)
-    ? raw.camposDudosos.filter(f => DUDOSO_FIELDS.includes(f))
-    : []
-  return safe
-}
-
 function loadHistorial() {
   try {
     const raw = JSON.parse(localStorage.getItem(HISTORIAL_KEY) || '[]')
-    if (!Array.isArray(raw)) return []
-    return raw
-      .map(item => {
-        if (!item || typeof item !== 'object') return null
-        if (typeof item.id !== 'number')      return null
-        if (typeof item.fecha !== 'string')   return null
-        const ficha = sanitizeFicha(item.ficha)
-        if (!ficha) return null
-        // Only allow base64 data URLs — reject blob: and any other scheme
-        const thumbnail = (
-          typeof item.thumbnail === 'string' &&
-          item.thumbnail.startsWith('data:image/') &&
-          item.thumbnail.length < 200_000
-        ) ? item.thumbnail : null
-        return {
-          id:         item.id,
-          fecha:      item.fecha.slice(0, 20),
-          ficha,
-          thumbnail,
-          vendida:    item.vendida === true,
-          precioVenta: typeof item.precioVenta === 'number' && isFinite(item.precioVenta) ? item.precioVenta : null,
-        }
-      })
-      .filter(Boolean)
+    return sanitizeHistorial(raw, MAX_HISTORIAL)
   } catch {
     return []
   }
 }
 
+// Debounces the network push only — localStorage below still saves every
+// call synchronously. Some callers (e.g. a medidas keystroke) invoke this on
+// every change, which would otherwise fire one POST per keystroke.
+let syncPushTimer = null
+const SYNC_PUSH_DEBOUNCE_MS = 800
+
 function saveHistorial(items) {
   try {
     localStorage.setItem(HISTORIAL_KEY, JSON.stringify(items))
+    // Every mutation goes through this one function, so pushing the sync
+    // copy here (instead of at each call site) means no caller can forget
+    // to keep the other device's copy up to date. Best-effort: the local
+    // save already succeeded, so a sync failure here is silent.
+    const code = localStorage.getItem(SYNC_CODE_KEY)
+    if (code) {
+      clearTimeout(syncPushTimer)
+      syncPushTimer = setTimeout(() => {
+        pushSync(code, items).catch(() => {})
+      }, SYNC_PUSH_DEBOUNCE_MS)
+    }
     return true
   } catch {
     return false
@@ -282,7 +261,7 @@ function Toast({ message, type, onDone, duration = 3000, action, onAction }) {
 }
 
 /* ─── Empty state ────────────────────────── */
-function EmptyPanel({ historial, onSelectHistorial, onDeleteHistorial, onClearHistorial, onExportHistorial, onToggleVendida }) {
+function EmptyPanel({ historial, onSelectHistorial, onDeleteHistorial, onClearHistorial, onExportHistorial, onToggleVendida, onOpenSync, syncCode }) {
   if (historial.length === 0) {
     return (
       <div className="col-right-empty no-historial">
@@ -291,6 +270,9 @@ function EmptyPanel({ historial, onSelectHistorial, onDeleteHistorial, onClearHi
         <p className="col-right-empty-sub">
           Sube una foto y pulsa generar para ver el resultado
         </p>
+        <button className="sync-empty-link" onClick={onOpenSync}>
+          {syncCode ? '⟳ Sincronización activa' : '⟳ ¿Ya tienes historial en otro dispositivo?'}
+        </button>
       </div>
     )
   }
@@ -301,6 +283,14 @@ function EmptyPanel({ historial, onSelectHistorial, onDeleteHistorial, onClearHi
         <span className="historial-title">HISTORIAL</span>
         <div className="historial-header-right">
           <span className="historial-count">{historial.length} prendas</span>
+          <button
+            className={`historial-sync-btn${syncCode ? ' is-active' : ''}`}
+            onClick={onOpenSync}
+            aria-label={syncCode ? 'Gestionar sincronización' : 'Sincronizar entre dispositivos'}
+            title={syncCode ? 'Sincronización activa' : 'Sincronizar entre dispositivos'}
+          >
+            ⟳
+          </button>
           {historial.length > 0 && (
             <>
               <button
@@ -854,6 +844,8 @@ export default function ImageUploader() {
   const [notas, setNotas]               = useState('')
   const [editingKey, setEditingKey]     = useState(null)
   const [editorUrl, setEditorUrl]       = useState(null)
+  const [syncCode, setSyncCode]         = useState(null)
+  const [showSyncModal, setShowSyncModal] = useState(false)
 
   const abortRef            = useRef(null)
   const hintTimerRef        = useRef(null)
@@ -862,6 +854,7 @@ export default function ImageUploader() {
   useEffect(() => {
     setPortalTarget(document.getElementById('resultado-col'))
     setHistorial(loadHistorial())
+    setSyncCode(localStorage.getItem(SYNC_CODE_KEY))
     return () => {
       abortRef.current?.abort()
       clearTimeout(hintTimerRef.current)
@@ -1128,17 +1121,23 @@ export default function ImageUploader() {
         thumbnail: thumbBase64,
         vendida: false,
         precioVenta: null,
+        updatedAt: newId,
       }
 
       // Track which historial entry is being shown so medidas edits sync to it
       currentEntryIdRef.current = newId
       setMedidas('')
 
-      const nuevo = [entrada, ...historial].slice(0, MAX_HISTORIAL)
-      setHistorial(nuevo)
-      if (!saveHistorial(nuevo)) {
-        showToast('No se pudo guardar en historial.', 'error')
-      }
+      // Functional update: a slow analyze call must insert into whatever
+      // historial exists when it resolves, not the array captured when it
+      // started (which a sync pull or another edit may have since replaced).
+      setHistorial(prev => {
+        const nuevo = [entrada, ...prev].slice(0, MAX_HISTORIAL)
+        if (!saveHistorial(nuevo)) {
+          showToast('No se pudo guardar en historial.', 'error')
+        }
+        return nuevo
+      })
 
     } catch (err) {
       if (err.name === 'AbortError') {
@@ -1150,7 +1149,7 @@ export default function ImageUploader() {
       clearTimeout(timeoutId)
       setCargando(false)
     }
-  }, [fotos, cargando, historial, showToast, notas])
+  }, [fotos, cargando, showToast, notas])
 
   // ── Enter key shortcut ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -1202,7 +1201,7 @@ export default function ImageUploader() {
     setHistorial(prev => {
       const next = prev.map(item =>
         item.id === id
-          ? { ...item, ficha: { ...item.ficha, medidas: value } }
+          ? { ...item, ficha: { ...item.ficha, medidas: value }, updatedAt: Date.now() }
           : item
       )
       saveHistorial(next)
@@ -1210,36 +1209,41 @@ export default function ImageUploader() {
     })
   }, [])
 
+  // Functional update throughout: reads the historial that exists when this
+  // runs, not a closed-over snapshot, so it can't race a concurrent sync
+  // merge or edit into resurrecting/dropping unrelated items.
   const deleteHistorial = useCallback((id) => {
-    const item = historial.find(h => h.id === id)
-    if (!item) return
-    const nuevo = historial.filter(h => h.id !== id)
-    setHistorial(nuevo)
-    saveHistorial(nuevo)
+    setHistorial(prev => {
+      const item = prev.find(h => h.id === id)
+      if (!item) return prev
+      const nuevo = prev.filter(h => h.id !== id)
+      saveHistorial(nuevo)
 
-    // Offer undo for 5 seconds
-    const titulo = item.ficha.titulo
-    showToast(
-      `"${titulo.length > 22 ? titulo.slice(0, 22) + '…' : titulo}" eliminado`,
-      'info',
-      'DESHACER',
-      () => {
-        setHistorial(prev => {
-          const restaurado = [item, ...prev]
-            .sort((a, b) => b.id - a.id)
-            .slice(0, MAX_HISTORIAL)
-          saveHistorial(restaurado)
-          return restaurado
-        })
-      }
-    )
-  }, [historial, showToast])
+      // Offer undo for 5 seconds
+      const titulo = item.ficha.titulo
+      showToast(
+        `"${titulo.length > 22 ? titulo.slice(0, 22) + '…' : titulo}" eliminado`,
+        'info',
+        'DESHACER',
+        () => {
+          setHistorial(prev2 => {
+            const restaurado = [item, ...prev2]
+              .sort((a, b) => b.id - a.id)
+              .slice(0, MAX_HISTORIAL)
+            saveHistorial(restaurado)
+            return restaurado
+          })
+        }
+      )
+      return nuevo
+    })
+  }, [showToast])
 
   const toggleVendida = useCallback((id) => {
     setHistorial(prev => {
       const next = prev.map(item =>
         item.id === id
-          ? { ...item, vendida: !item.vendida, precioVenta: !item.vendida ? item.ficha.precio : null }
+          ? { ...item, vendida: !item.vendida, precioVenta: !item.vendida ? item.ficha.precio : null, updatedAt: Date.now() }
           : item
       )
       saveHistorial(next)
@@ -1273,20 +1277,21 @@ export default function ImageUploader() {
   }, [editorUrl])
 
   const clearHistorial = useCallback(() => {
-    const backup = [...historial]
-    if (backup.length === 0) return
-    setHistorial([])
-    saveHistorial([])
-    showToast(
-      `${backup.length} ${backup.length === 1 ? 'prenda eliminada' : 'prendas eliminadas'}`,
-      'info',
-      'DESHACER',
-      () => {
-        setHistorial(backup)
-        saveHistorial(backup)
-      }
-    )
-  }, [historial, showToast])
+    setHistorial(prev => {
+      if (prev.length === 0) return prev
+      saveHistorial([])
+      showToast(
+        `${prev.length} ${prev.length === 1 ? 'prenda eliminada' : 'prendas eliminadas'}`,
+        'info',
+        'DESHACER',
+        () => {
+          setHistorial(prev)
+          saveHistorial(prev)
+        }
+      )
+      return []
+    })
+  }, [showToast])
 
   const exportarHistorial = useCallback(() => {
     if (historial.length === 0) return
@@ -1294,6 +1299,47 @@ export default function ImageUploader() {
     downloadTextFile(`plendu-historial-${fecha}.csv`, historialToCSV(historial), 'text/csv;charset=utf-8')
     showToast(`${historial.length} ${historial.length === 1 ? 'ficha exportada' : 'fichas exportadas'}`, 'success')
   }, [historial, showToast])
+
+  // A fresh code was just pushed with the current historial in SyncModal —
+  // just remember it locally, nothing to merge (the server already has
+  // exactly what's already on screen).
+  const handleSyncActivate = useCallback((code) => {
+    localStorage.setItem(SYNC_CODE_KEY, code)
+    setSyncCode(code)
+    setShowSyncModal(false)
+    showToast('Sincronización activada', 'success')
+  }, [showToast])
+
+  const handleSyncDeactivate = useCallback(() => {
+    localStorage.removeItem(SYNC_CODE_KEY)
+    setSyncCode(null)
+    setShowSyncModal(false)
+    showToast('Sincronización desactivada en este dispositivo', 'info')
+  }, [showToast])
+
+  // The server copy is gone — local historial is untouched, this only stops
+  // the link between devices.
+  const handleSyncDeleted = useCallback(() => {
+    localStorage.removeItem(SYNC_CODE_KEY)
+    setSyncCode(null)
+    setShowSyncModal(false)
+    showToast('Datos de sincronización eliminados de la nube', 'info')
+  }, [showToast])
+
+  // Pulled a code from another device — merge with whatever's already local
+  // rather than picking a side, so neither device's history is silently
+  // discarded, then push the merged result back so both ends agree.
+  const handleSyncMerged = useCallback((code, remoteHistorial) => {
+    setHistorial(prev => {
+      const merged = mergeHistorial(prev, remoteHistorial, MAX_HISTORIAL)
+      localStorage.setItem(SYNC_CODE_KEY, code)
+      saveHistorial(merged)
+      return merged
+    })
+    setSyncCode(code)
+    setShowSyncModal(false)
+    showToast('Historial sincronizado', 'success')
+  }, [showToast])
 
   const rightPanel = () => {
     if (cargando) return <SkeletonPanel />
@@ -1318,6 +1364,8 @@ export default function ImageUploader() {
         onClearHistorial={clearHistorial}
         onExportHistorial={exportarHistorial}
         onToggleVendida={toggleVendida}
+        onOpenSync={() => setShowSyncModal(true)}
+        syncCode={syncCode}
       />
     )
   }
@@ -1340,6 +1388,18 @@ export default function ImageUploader() {
           photoUrl={editorUrl}
           onApply={(file) => { processFile(file, editingKey); closeEditor() }}
           onCancel={closeEditor}
+        />
+      )}
+
+      {showSyncModal && (
+        <SyncModal
+          currentCode={syncCode}
+          historial={historial}
+          onActivate={handleSyncActivate}
+          onDeactivate={handleSyncDeactivate}
+          onDeleted={handleSyncDeleted}
+          onMerged={handleSyncMerged}
+          onClose={() => setShowSyncModal(false)}
         />
       )}
 

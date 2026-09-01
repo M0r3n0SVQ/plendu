@@ -62,6 +62,17 @@ export default function Privacidad() {
               o vaciando los datos del sitio en la configuración del navegador.
             </li>
             <li>
+              <strong>Sincronización entre dispositivos (opcional):</strong> si
+              activas esta función, generamos un código aleatorio (no un
+              email ni una cuenta) y guardamos una copia de tu historial en
+              nuestro servidor bajo ese código durante un máximo de 90 días
+              desde el último cambio, para poder traértela a otro
+              dispositivo. Nadie sin el código puede acceder a esos datos.
+              Puedes eliminarlos de la nube en cualquier momento desde el
+              propio menú de sincronización, o simplemente dejar de
+              sincronizar y que caduquen solos.
+            </li>
+            <li>
               <strong>Preferencia de tema:</strong> guardamos en localStorage
               tu elección de modo claro/oscuro para que se mantenga al volver.
             </li>
@@ -105,8 +116,10 @@ export default function Privacidad() {
           <p>
             Como no almacenamos datos personales en nuestros servidores, el
             ejercicio de derechos (acceso, rectificación, supresión) se
-            resuelve borrando el historial local de tu navegador. Si tienes
-            alguna duda, escribe a <a href="mailto:alvaromorm@hotmail.com">alvaromorm@hotmail.com</a>.
+            resuelve borrando el historial local de tu navegador, y si tienes
+            la sincronización activada, eliminando esos datos desde el propio
+            menú de sincronización. Si tienes alguna duda, escribe a{' '}
+            <a href="mailto:alvaromorm@hotmail.com">alvaromorm@hotmail.com</a>.
           </p>
         </section>
 

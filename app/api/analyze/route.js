@@ -1,8 +1,7 @@
 import OpenAI from 'openai'
 import * as Sentry from '@sentry/nextjs'
-import { Ratelimit } from '@upstash/ratelimit'
-import { Redis } from '@upstash/redis'
 import { ESTADO_OPTIONS, CATEGORIA_OPTIONS, DUDOSO_FIELDS, ALERTA_MESSAGES } from '../../lib/vintedOptions'
+import { createRateLimiter, getClientIP } from '../../lib/rateLimit'
 
 const ALERTA_CODES = Object.keys(ALERTA_MESSAGES)
 
@@ -33,63 +32,7 @@ const openai = process.env.OPENAI_API_KEY
 // Production: Upstash Redis sliding window — survives cold starts and is
 // shared across all serverless instances.
 // Dev / preview without Upstash vars: in-memory fallback (per-instance only).
-const RATE_LIMIT_WINDOW_MS  = 60_000  // 1 minute window
-const RATE_LIMIT_MAX        = 10      // max requests per IP per window
-
-const upstashConfigured =
-  !!process.env.UPSTASH_REDIS_REST_URL &&
-  !!process.env.UPSTASH_REDIS_REST_TOKEN
-
-const ratelimit = upstashConfigured
-  ? new Ratelimit({
-      redis:    Redis.fromEnv(),
-      limiter:  Ratelimit.slidingWindow(RATE_LIMIT_MAX, '60 s'),
-      analytics: true,
-      prefix:   'plendu:rl:analyze',
-    })
-  : null
-
-// In-memory fallback (used only when Upstash is not configured)
-const rateLimitMap = new Map()
-
-function getClientIP(request) {
-  return (
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    request.headers.get('x-real-ip') ||
-    'unknown'
-  )
-}
-
-function isRateLimitedInMemory(ip) {
-  const now = Date.now()
-  if (rateLimitMap.size > 10_000) rateLimitMap.clear()
-
-  const record = rateLimitMap.get(ip)
-  if (!record || now - record.windowStart >= RATE_LIMIT_WINDOW_MS) {
-    rateLimitMap.set(ip, { windowStart: now, count: 1 })
-    return false
-  }
-  if (record.count >= RATE_LIMIT_MAX) return true
-  record.count++
-  return false
-}
-
-// Returns { limited: boolean, retryAfter: number } — never throws.
-// On Upstash error we fail OPEN: legitimate users shouldn't be blocked by
-// our infra failing. The OpenAI cost cap is the actual safety net.
-async function checkRateLimit(ip) {
-  if (ratelimit) {
-    try {
-      const { success, reset } = await ratelimit.limit(ip)
-      const retryAfter = Math.max(1, Math.ceil((reset - Date.now()) / 1000))
-      return { limited: !success, retryAfter }
-    } catch (err) {
-      console.error('[ratelimit] upstash failed, allowing request:', err?.message)
-      return { limited: false, retryAfter: 60 }
-    }
-  }
-  return { limited: isRateLimitedInMemory(ip), retryAfter: 60 }
-}
+const checkRateLimit = createRateLimiter({ prefix: 'analyze', windowMs: 60_000, max: 10 })
 
 // ─── Validation constants ─────────────────────────────────────────────────────
 const ALLOWED_MIMES  = new Set(['image/jpeg', 'image/png', 'image/webp'])
