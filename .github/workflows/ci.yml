@@ -46,3 +46,36 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  lighthouse:
+    name: Lighthouse
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only PRs — a fresh preview isn't needed on every push to master, and
+    # this is where a "design" change could quietly regress Core Web Vitals
+    # or accessibility without anyone noticing.
+    if: github.event_name == 'pull_request'
+
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run Lighthouse CI
+        uses: treosh/lighthouse-ci-action@v12
+        with:
+          configPath: './.lighthouserc.json'
