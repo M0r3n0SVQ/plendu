@@ -8,7 +8,12 @@
   --bg3:          #161616;
   --fg:           #f2ede4;
   --fg2:          #8a8580;
-  --fg3:          #4a4742;
+  /* Was #4a4742 (2.07-2.17:1 against bg/bg2/bg3 — fails WCAG AA's 4.5:1).
+     Lightened to clear 4.5:1 against all three dark-theme backgrounds with
+     comfortable margin (4.4-6.2:1) — chosen from a set of calibrated
+     options, this one keeps a visibly muted feel without rounding the
+     minimum. */
+  --fg3:          #948e84;
   --accent:       #b8965a;
   --accent-light: rgba(184, 150, 90, 0.15);
   --accent-border:rgba(184, 150, 90, 0.25);
@@ -1163,8 +1168,12 @@ body::after {
   --bg2:          #ede9e2;
   --bg3:          #e4dfd7;
   --fg:           #1a1714;
-  --fg2:          #6b6560;
-  --fg3:          #a09b95;
+  /* --fg2 was #6b6560 (4.33:1 against --bg3 — just under WCAG AA's 4.5:1)
+     and --fg3 was #a09b95 (2.08-2.47:1 — nowhere close). Darkening --fg2
+     first opens enough headroom for --fg3 to sit visibly lighter than it
+     while still clearing 4.5:1 itself (worst case 5.91:1 / 4.72:1). */
+  --fg2:          #56514d;
+  --fg3:          #63605c;
   /* Darker than the dark-theme accent on purpose: #9a7a3a only hit 3.6:1
      against this background (fails WCAG AA's 4.5:1 for normal text) — this
      shade clears 4.65:1, checked against every place --accent doubles as
@@ -1825,7 +1834,7 @@ body,
   cursor: pointer;
 }
 [data-theme="light"] .meta-select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b6560'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2356514d'/%3E%3C/svg%3E");
 }
 /* Precio: input + € suffix share one border */
 .meta-precio-wrap {
