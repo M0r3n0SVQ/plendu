@@ -1909,6 +1909,11 @@ body,
   color: var(--accent);
   background: var(--accent-light);
 }
+.btn-share:disabled {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
 
 /* ─── Error page ─────────────────────────── */
 .error-page {

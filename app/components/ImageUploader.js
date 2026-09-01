@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { ESTADO_OPTIONS, CATEGORIA_OPTIONS, ALERTA_MESSAGES } from '../lib/vintedOptions'
 import { sanitizeHistorial, mergeHistorial, MAX_HISTORIAL, MEDIDAS_MAX_LEN } from '../lib/historial'
 import { SYNC_CODE_KEY, pushSync } from '../lib/syncClient'
+import { loadImage, canvasToBlob } from '../lib/imageUtils'
 import PhotoEditor from './PhotoEditor'
 import SyncModal from './SyncModal'
 
@@ -124,6 +125,98 @@ function generateThumbnail(blobUrl, maxSize = 120) {
     img.onerror = () => resolve(null)
     img.src = blobUrl
   })
+}
+
+const STORY_W = 1080
+const STORY_H = 1920
+
+// Greedy word-wrap for canvas text — ctx must already have .font set.
+// Truncates with an ellipsis if the text still overflows maxLines.
+function wrapText(ctx, text, maxWidth, maxLines) {
+  const words = text.split(' ')
+  const lines = []
+  let current = ''
+  for (const word of words) {
+    const test = current ? `${current} ${word}` : word
+    if (current && ctx.measureText(test).width > maxWidth) {
+      lines.push(current)
+      current = word
+      if (lines.length === maxLines) break
+    } else {
+      current = test
+    }
+  }
+  if (lines.length < maxLines && current) lines.push(current)
+
+  const consumedChars = lines.join(' ').length
+  if (lines.length === maxLines && consumedChars < text.length) {
+    let last = lines[maxLines - 1]
+    while (last.length > 0 && ctx.measureText(`${last}…`).width > maxWidth) {
+      last = last.slice(0, -1).trimEnd()
+    }
+    lines[maxLines - 1] = `${last}…`
+  }
+  return lines
+}
+
+// Composites a 9:16 story-ready image (photo + título + precio) for sharing
+// outside Vinted. Fixed dark/gold branding regardless of the app's own
+// light/dark toggle — this is an exported artifact, not part of the UI.
+async function buildStoryImage({ photoUrl, titulo, precio }) {
+  await document.fonts.ready
+  const canvas = document.createElement('canvas')
+  canvas.width = STORY_W
+  canvas.height = STORY_H
+  const ctx = canvas.getContext('2d')
+
+  ctx.fillStyle = '#080808'
+  ctx.fillRect(0, 0, STORY_W, STORY_H)
+
+  if (photoUrl) {
+    try {
+      const img = await loadImage(photoUrl)
+      const scale = Math.max(STORY_W / img.naturalWidth, STORY_H / img.naturalHeight)
+      const dw = img.naturalWidth * scale
+      const dh = img.naturalHeight * scale
+      ctx.drawImage(img, (STORY_W - dw) / 2, (STORY_H - dh) / 2, dw, dh)
+    } catch { /* keep the plain dark background if the photo fails to load */ }
+  }
+
+  const scrim = ctx.createLinearGradient(0, STORY_H * 0.55, 0, STORY_H)
+  scrim.addColorStop(0, 'rgba(8,8,8,0)')
+  scrim.addColorStop(1, 'rgba(8,8,8,0.94)')
+  ctx.fillStyle = scrim
+  ctx.fillRect(0, STORY_H * 0.55, STORY_W, STORY_H * 0.45)
+
+  const displayFont = (getComputedStyle(document.documentElement).getPropertyValue('--font-display') || 'serif').trim()
+  const monoFont = (getComputedStyle(document.documentElement).getPropertyValue('--font-mono') || 'monospace').trim()
+  const TEXT = '#f2ede4'
+  const ACCENT = '#b8965a'
+
+  ctx.textBaseline = 'alphabetic'
+  ctx.fillStyle = TEXT
+  ctx.font = `600 38px ${displayFont}`
+  ctx.fillText('Plendu', 72, 1290)
+  const markW = ctx.measureText('Plendu').width
+  ctx.fillStyle = ACCENT
+  ctx.beginPath()
+  ctx.arc(72 + markW + 16, 1276, 6, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.fillStyle = TEXT
+  ctx.font = `700 62px ${displayFont}`
+  const lines = wrapText(ctx, titulo, STORY_W - 144, 3)
+  let y = 1400
+  for (const line of lines) {
+    ctx.fillText(line, 72, y)
+    y += 74
+  }
+
+  ctx.fillStyle = ACCENT
+  ctx.font = `500 88px ${monoFont}`
+  ctx.fillText(`${precio}€`, 72, y + 56)
+
+  return canvasToBlob(canvas, 0.92)
 }
 
 // Clipboard with execCommand fallback for http/restricted contexts
@@ -442,6 +535,7 @@ function FichaPanel({
   const [draft, setDraft]             = useState('')
   const [copiado, setCopiado]         = useState(null)
   const [copiadoTodo, setCopiadoTodo] = useState(false)
+  const [creandoStory, setCreandoStory] = useState(false)
 
   // Reload local ficha when a new ficha arrives (AI result or historial item)
   useEffect(() => { setFicha(fichaInit) }, [fichaInit])
@@ -521,8 +615,9 @@ function FichaPanel({
       const shareData = { title: ficha.titulo, text }
 
       // Web Share Level 2: try to attach the principal photo if available.
-      // thumbnail is a base64 data: URL, safe to fetch (no network).
-      if (thumbnail && typeof thumbnail === 'string' && thumbnail.startsWith('data:image/')) {
+      // thumbnail is either a data: URL (from a saved historial entry) or a
+      // blob: URL (right after analyzing) — both are local, safe to fetch.
+      if (thumbnail && typeof thumbnail === 'string' && (thumbnail.startsWith('data:image/') || thumbnail.startsWith('blob:'))) {
         try {
           const blob = await (await fetch(thumbnail)).blob()
           const file = new File([blob], 'plendu-prenda.jpg', { type: blob.type || 'image/jpeg' })
@@ -535,6 +630,38 @@ function FichaPanel({
       await navigator.share(shareData)
     } catch { /* user cancelled or API unsupported */ }
   }, [ficha.titulo, buildTexto, canShare, thumbnail])
+
+  // Builds a 9:16 image for Instagram/TikTok stories. Shares it directly on
+  // mobile when the Web Share Level 2 file API is available; otherwise
+  // downloads it, since desktop has no "share to Instagram" to hand off to.
+  const crearImagenStory = useCallback(async () => {
+    if (creandoStory || !thumbnail) return
+    setCreandoStory(true)
+    try {
+      const blob = await buildStoryImage({ photoUrl: thumbnail, titulo: ficha.titulo, precio: ficha.precio })
+      const file = new File([blob], 'plendu-story.jpg', { type: 'image/jpeg' })
+
+      if (canShare && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: ficha.titulo })
+        } catch { /* user cancelled — the image itself was still generated fine */ }
+        return
+      }
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'plendu-story.jpg'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch {
+      showToast('No se pudo generar la imagen.', 'error')
+    } finally {
+      setCreandoStory(false)
+    }
+  }, [creandoStory, thumbnail, ficha.titulo, ficha.precio, canShare, showToast])
 
   return (
     <div className="ficha">
@@ -795,6 +922,16 @@ function FichaPanel({
         {canShare && (
           <button className="btn-share" onClick={compartir} aria-label="Compartir ficha">
             ↗ COMPARTIR
+          </button>
+        )}
+        {thumbnail && (
+          <button
+            className="btn-share"
+            onClick={crearImagenStory}
+            disabled={creandoStory}
+            aria-label="Crear imagen para stories de Instagram o TikTok"
+          >
+            {creandoStory ? '···' : '▢ STORY'}
           </button>
         )}
       </div>

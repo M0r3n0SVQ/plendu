@@ -1,29 +1,12 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { loadImage, canvasToBlob } from '../lib/imageUtils'
 
 // Rotation and cropping are each baked into a fresh canvas the moment the
 // user applies them, rather than tracked as compound transforms to reconcile
 // at export time. Slightly more re-encoding, much simpler (and safer) math —
 // the crop rectangle only ever has to reason about one already-rotated image.
-function loadImage(url) {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error('No se pudo cargar la imagen'))
-    img.src = url
-  })
-}
-
-function canvasToBlob(canvas) {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => (blob ? resolve(blob) : reject(new Error('No se pudo generar la imagen'))),
-      'image/jpeg',
-      0.92
-    )
-  })
-}
 
 export default function PhotoEditor({ photoUrl, onApply, onCancel }) {
   const [workingUrl, setWorkingUrl] = useState(photoUrl)
