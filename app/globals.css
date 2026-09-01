@@ -2309,6 +2309,64 @@ button:focus-visible,
   .legal-main { padding: 2rem 1.25rem 3rem; }
 }
 
+/* ─── Guías (SEO content) ─────────────────── */
+.guide-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-top: 1.5rem;
+}
+.guide-card {
+  display: block;
+  padding: 1.25rem 1.4rem;
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.guide-card:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-light);
+}
+.guide-card-title {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 0.35rem;
+}
+.guide-card-desc {
+  font-size: 0.88rem;
+  color: var(--fg2);
+  line-height: 1.6;
+}
+.guide-back {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: var(--fg2);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border3);
+  margin-bottom: 2rem;
+}
+.guide-back:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.guide-cta {
+  display: block;
+  text-align: center;
+  margin-top: 2.5rem;
+  padding: 1rem 1.25rem;
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+}
+.guide-cta:hover { opacity: 0.9; }
+
 /* ─── Footer link to privacy ─────────────── */
 .footer-link {
   color: var(--fg2);

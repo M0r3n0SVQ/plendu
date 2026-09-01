@@ -84,6 +84,8 @@ export default function Home() {
         <span>
           Hecho para vendedores reales · 2026
           {' · '}
+          <Link href="/guias" className="footer-link">Guías</Link>
+          {' · '}
           <Link href="/privacidad" className="footer-link">Privacidad</Link>
         </span>
       </footer>

@@ -150,7 +150,11 @@ export default function Privacidad() {
 
       <footer className="footer">
         <span className="footer-logo">Plendu</span>
-        <span>Hecho para vendedores reales · 2026</span>
+        <span>
+          Hecho para vendedores reales · 2026
+          {' · '}
+          <Link href="/guias" className="footer-link">Guías</Link>
+        </span>
       </footer>
     </div>
   )
