@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { mergeHistorial, MAX_HISTORIAL } from '../lib/historial'
+import { mergeHistorial, MAX_HISTORIAL, sanitizeFicha } from '../lib/historial'
 import { MERCADOS, MERCADO_DEFAULT, MERCADO_IDS, isMercadoId } from '../lib/vintedOptions'
 import { SYNC_CODE_KEY } from '../lib/syncClient'
 import { compressImage, generateThumbnail, base64ToBlobUrl } from '../lib/imageUtils'
@@ -64,8 +64,14 @@ export default function ImageUploader() {
   const isCompressing = Object.values(fotos).some(f => f?.compressing)
   const btnState = numFotos === 4 ? 'state-3' : numFotos >= 2 ? 'state-2' : 'state-1'
 
+  // toastSeqRef guarantees every call gets a distinct key — keying only on
+  // message+type failed to remount (and so failed to restart the dismiss
+  // timer for) two identical consecutive toasts, e.g. the same rate-limit
+  // error shown twice in a row after a retry.
+  const toastSeqRef = useRef(0)
   const showToast = useCallback((message, type = 'error', action = null, onAction = null) => {
-    setToast({ message, type, action, onAction })
+    toastSeqRef.current += 1
+    setToast({ id: toastSeqRef.current, message, type, action, onAction })
   }, [])
 
   const handleMercadoChange = useCallback((value) => {
@@ -157,7 +163,14 @@ export default function ImageUploader() {
   const swapSlots = useCallback((keyA, keyB) => {
     if (keyA === keyB) return
     setFotos(prev => {
-      if (!prev[keyA] || prev[keyA].compressing) return prev
+      // Both sides need the guard: keyA can't actually be mid-compression in
+      // practice (handleSlotPointerDown already blocks starting a drag from
+      // a compressing slot), but keyB (the drop target) can — dropping onto
+      // a slot that started compressing after the drag began. Moving that
+      // slot's entry elsewhere would leave processFile's own stale-URL check
+      // (keyed on the OLD slot key) revoking the url out from under wherever
+      // it landed, stuck showing "compressing" forever.
+      if (!prev[keyA] || prev[keyA].compressing || prev[keyB]?.compressing) return prev
       const next = { ...prev }
       const fromPhoto = prev[keyA]
       const toPhoto = prev[keyB]
@@ -246,7 +259,7 @@ export default function ImageUploader() {
   }, [fotos, cargando, processFile, showToast])
 
   const analizar = useCallback(async () => {
-    if (!fotos.principal || cargando || Object.values(fotos).some(f => f?.compressing)) return
+    if (!fotos.principal || cargando || isCompressing) return
 
     // Cancel any previous in-flight request
     abortRef.current?.abort()
@@ -275,6 +288,13 @@ export default function ImageUploader() {
       const makeFotoPayload = (f) =>
         f?.base64 ? { data: f.base64, mime: f.mime || 'image/jpeg' } : null
 
+      // Only needs fotos.principal.url, already available — kick it off
+      // alongside the request instead of after it, so the canvas work
+      // overlaps the (multi-second) network wait rather than extending it.
+      // generateThumbnail never rejects (resolves null on error), so there's
+      // nothing to catch here if the fetch below throws first.
+      const thumbPromise = generateThumbnail(fotos.principal.url)
+
       const res = await fetch('/api/analyze', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -302,18 +322,38 @@ export default function ImageUploader() {
         throw new Error(data.error || `Error ${res.status}. Inténtalo de nuevo.`)
       }
 
-      const thumbBase64 = await generateThumbnail(fotos.principal.url)
+      // The server already validates/clamps every field with the same Zod
+      // schema this shares its philosophy with, so this never actually
+      // differs from `data` today — but routing it through the same
+      // sanitizeFicha the client uses for localStorage/sync keeps historial
+      // writes going through the one "safe ficha" definition instead of
+      // trusting a network response's shape directly, the same as every
+      // other entry point into historial already does.
+      const safeFicha = sanitizeFicha(data)
+      if (!safeFicha) {
+        throw new Error('Respuesta de la IA con formato inesperado.')
+      }
+
+      const thumbBase64 = await thumbPromise
 
       setThumbnail(fotos.principal.url)
-      setFicha(data)
+      setFicha(safeFicha)
 
       // Contextual hints — shown after a short delay so the ficha renders first
       clearTimeout(hintTimerRef.current)
       hintTimerRef.current = setTimeout(() => {
-        if (!data.marca && !data.talla) {
+        // Last entry in estadoOptions is always the worst-condition tier
+        // ("Satisfactorio"/"Satisfaisant"...) — compare by position, not by
+        // a hardcoded Spanish literal, so this still fires for other mercados.
+        const peorEstado = MERCADOS[safeFicha.mercado]?.estadoOptions?.at(-1)
+        if (!safeFicha.marca && !safeFicha.talla) {
           showToast('Sin etiqueta visible: añade una foto de la etiqueta para mejor resultado', 'info')
-        } else if (data.estado === 'Satisfactorio') {
-          showToast('Estado Satisfactorio: recuerda fotografiar los defectos al publicar en Vinted', 'info')
+        } else if (safeFicha.estado === peorEstado) {
+          // Names the actual value ("Satisfactorio"/"Satisfaisant"...) instead
+          // of hardcoding the ES one, so the hint matches what the ficha itself
+          // shows — the surrounding message stays Spanish either way (app UI
+          // is always Spanish; only the ficha content is per-mercado).
+          showToast(`Estado ${peorEstado}: recuerda fotografiar los defectos al publicar en Vinted`, 'info')
         }
       }, 500)
 
@@ -323,7 +363,7 @@ export default function ImageUploader() {
       const entrada = {
         id: newId,
         fecha,
-        ficha: data,
+        ficha: safeFicha,
         thumbnail: thumbBase64,
         vendida: false,
         precioVenta: null,
@@ -355,7 +395,7 @@ export default function ImageUploader() {
       clearTimeout(timeoutId)
       setCargando(false)
     }
-  }, [fotos, cargando, showToast, notas, mercado])
+  }, [fotos, cargando, isCompressing, showToast, notas, mercado])
 
   // ── Enter key shortcut ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -399,21 +439,30 @@ export default function ImageUploader() {
     currentEntryIdRef.current = item.id
   }, [])
 
-  // Persists medidas in the historial entry currently being viewed
-  const updateMedidas = useCallback((value) => {
-    setMedidas(value)
+  // Persists a partial ficha update (medidas, or any of the fields
+  // FichaPanel lets a user correct: estado/categoria/marca/talla/precio/
+  // titulo/descripcion) into the historial entry currently being viewed.
+  // Without this, FichaPanel's edits only ever lived in its own local
+  // state: they looked saved, but reopening the same item from historial
+  // (or exporting/syncing it) showed the AI's original values again.
+  const updateFicha = useCallback((partial) => {
     const id = currentEntryIdRef.current
     if (id == null) return
     setHistorial(prev => {
       const next = prev.map(item =>
         item.id === id
-          ? { ...item, ficha: { ...item.ficha, medidas: value }, updatedAt: Date.now() }
+          ? { ...item, ficha: { ...item.ficha, ...partial }, updatedAt: Date.now() }
           : item
       )
       saveHistorial(next)
       return next
     })
   }, [])
+
+  const updateMedidas = useCallback((value) => {
+    setMedidas(value)
+    updateFicha({ medidas: value })
+  }, [updateFicha])
 
   // Functional update throughout: reads the historial that exists when this
   // runs, not a closed-over snapshot, so it can't race a concurrent sync
@@ -516,21 +565,24 @@ export default function ImageUploader() {
     showToast('Sincronización activada', 'success')
   }, [showToast])
 
-  const handleSyncDeactivate = useCallback(() => {
+  // Both just drop the local link to the sync code (historial itself is
+  // untouched either way) — only the toast differs depending on whether the
+  // server copy still exists (deactivate) or was deleted (deleted).
+  const resetSyncLocal = useCallback((message) => {
     localStorage.removeItem(SYNC_CODE_KEY)
     setSyncCode(null)
     setShowSyncModal(false)
-    showToast('Sincronización desactivada en este dispositivo', 'info')
+    showToast(message, 'info')
   }, [showToast])
 
-  // The server copy is gone — local historial is untouched, this only stops
-  // the link between devices.
-  const handleSyncDeleted = useCallback(() => {
-    localStorage.removeItem(SYNC_CODE_KEY)
-    setSyncCode(null)
-    setShowSyncModal(false)
-    showToast('Datos de sincronización eliminados de la nube', 'info')
-  }, [showToast])
+  const handleSyncDeactivate = useCallback(
+    () => resetSyncLocal('Sincronización desactivada en este dispositivo'),
+    [resetSyncLocal]
+  )
+  const handleSyncDeleted = useCallback(
+    () => resetSyncLocal('Datos de sincronización eliminados de la nube'),
+    [resetSyncLocal]
+  )
 
   // Pulled a code from another device — merge with whatever's already local
   // rather than picking a side, so neither device's history is silently
@@ -560,6 +612,7 @@ export default function ImageUploader() {
         showToast={showToast}
         medidas={medidas}
         onMedidasChange={updateMedidas}
+        onFichaChange={updateFicha}
       />
     )
     return (
@@ -580,6 +633,14 @@ export default function ImageUploader() {
     <>
       {toast && (
         <Toast
+          // Forces a fresh mount (and a fresh dismiss timer) whenever a new
+          // toast replaces one still on screen — without this, two toasts
+          // in a row reuse the same instance and the second one inherits
+          // whatever was left of the first one's countdown instead of
+          // getting its own full duration. Keyed on a sequence id (not
+          // message+type) so this also covers two IDENTICAL toasts shown
+          // back to back, e.g. the same rate-limit error after a retry.
+          key={toast.id}
           message={toast.message}
           type={toast.type}
           action={toast.action}

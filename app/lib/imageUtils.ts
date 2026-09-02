@@ -59,6 +59,21 @@ interface CompressResult {
   exposure: Exposure
 }
 
+// Shared by compressImage and generateThumbnail below — both just scale an
+// already-loaded image down to fit maxSize and draw it into a fresh canvas,
+// only the target size/quality/output format differ per caller.
+function scaledCanvas(img: HTMLImageElement, maxSize: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
+  const scale = Math.min(maxSize / img.naturalWidth, maxSize / img.naturalHeight, 1)
+  const w = Math.max(1, Math.round(img.naturalWidth * scale))
+  const h = Math.max(1, Math.round(img.naturalHeight * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')!
+  ctx.drawImage(img, 0, 0, w, h)
+  return { canvas, ctx }
+}
+
 // ─── Image compression ────────────────────────────────────────────────────────
 // Resize to max 1024px and encode as JPEG 0.82 before sending to the API.
 // Reduces typical 3-5 MB photos to ~80-200 KB — 10-20× less data.
@@ -69,16 +84,9 @@ export function compressImage(file: File, maxDim = 1024, quality = 0.82): Promis
     img.onload = () => {
       URL.revokeObjectURL(tempUrl)
       try {
-        const scale = Math.min(maxDim / img.naturalWidth, maxDim / img.naturalHeight, 1)
-        const w = Math.max(1, Math.round(img.naturalWidth * scale))
-        const h = Math.max(1, Math.round(img.naturalHeight * scale))
-        const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        const ctx = canvas.getContext('2d')!
-        ctx.drawImage(img, 0, 0, w, h)
+        const { canvas, ctx } = scaledCanvas(img, maxDim)
         const dataUrl = canvas.toDataURL('image/jpeg', quality)
-        const exposure = estimateExposure(ctx, w, h)
+        const exposure = estimateExposure(ctx, canvas.width, canvas.height)
         // Release canvas memory
         canvas.width = 0
         canvas.height = 0
@@ -95,20 +103,20 @@ export function compressImage(file: File, maxDim = 1024, quality = 0.82): Promis
   })
 }
 
-// Generate a compact base64 thumbnail using canvas (survives page reloads)
-export function generateThumbnail(blobUrl: string, maxSize = 120): Promise<string | null> {
+// Generate a compact base64 thumbnail using canvas (survives page reloads).
+// Doubles as the source photo for a historial-reopened ficha's "story image"
+// share (buildStoryImage stretches it across a 1080-wide canvas), so 120px
+// was too soft for that — 400px/0.75 stays well under
+// sanitizeHistorialItem's 200KB-per-thumbnail cap (checked against a
+// worst-case, maximally-noisy synthetic photo: ~82KB base64, vs. ~200KB
+// allowed) while looking meaningfully sharper stretched to story size.
+export function generateThumbnail(blobUrl: string, maxSize = 400): Promise<string | null> {
   return new Promise((resolve) => {
     const img = new Image()
     img.onload = () => {
       try {
-        const scale = Math.min(maxSize / img.naturalWidth, maxSize / img.naturalHeight, 1)
-        const w = Math.max(1, Math.round(img.naturalWidth * scale))
-        const h = Math.max(1, Math.round(img.naturalHeight * scale))
-        const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.65)
+        const { canvas } = scaledCanvas(img, maxSize)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.75)
         canvas.width = 0
         canvas.height = 0
         resolve(dataUrl)
@@ -227,5 +235,12 @@ export async function buildStoryImage({ photoUrl, titulo, precio }: StoryImageOp
   ctx.font = `500 88px ${monoFont}`
   ctx.fillText(`${precio}€`, 72, y + 56)
 
-  return canvasToBlob(canvas, 0.92)
+  const blob = await canvasToBlob(canvas, 0.92)
+  // Same cleanup as compressImage/generateThumbnail above — this canvas is
+  // larger than either of theirs (1080x1920 vs a small thumbnail), so
+  // leaving its backing buffer for the GC to reclaim on its own schedule
+  // matters more here.
+  canvas.width = 0
+  canvas.height = 0
+  return blob
 }

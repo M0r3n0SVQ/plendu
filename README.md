@@ -57,6 +57,7 @@ Solo `OPENAI_API_KEY` es obligatoria. Las demás añaden funcionalidad si están
 |---|---|
 | `OPENAI_API_KEY` | Llamadas a la IA. Sin ella, `/api/analyze` devuelve 503. |
 | `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` | Rate limit compartido entre instancias y la sincronización de historial. El rate limit cae a uno en memoria sin esto; la sincronización devuelve 503. |
+| `NEXT_PUBLIC_SITE_URL` | Dominio real del despliegue, para `metadataBase`, canonical, sitemap y robots.txt (`app/lib/siteUrl.ts`). Sin esto cae a la URL de Vercel. |
 | `NEXT_PUBLIC_SENTRY_DSN` | Captura de errores. Sin esto Sentry no se inicializa. |
 | `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` | Subir sourcemaps a Sentry en el build. Opcional. |
 
@@ -64,7 +65,7 @@ Solo `OPENAI_API_KEY` es obligatoria. Las demás añaden funcionalidad si están
 
 Importa el repo en [vercel.com/new](https://vercel.com/new), mete las variables de entorno y dale a Deploy. Ya está. El `vercel.json` del repo configura la región (cdg1, París) y sube el timeout de `/api/analyze` a 60 s con 1 GB de memoria.
 
-Si vas a poner dominio propio, mira `app/layout.js` y cambia el `metadataBase` y los canonical de `https://plendu.app` al tuyo.
+Si pones dominio propio, añade `NEXT_PUBLIC_SITE_URL=https://tudominio.com` en las variables de entorno de Vercel — `metadataBase`, los canonical, el sitemap y el robots.txt lo recogen solos, sin tocar código.
 
 ### Upstash
 
@@ -103,6 +104,7 @@ app/
     csvExport.ts         Exportar historial a CSV
     clipboard.ts         Copiar al portapapeles con fallback
     vintedOptions.ts    Categorías/estados/tallas/alertas, por mercado (ES/FR)
+    siteUrl.ts            Dominio del despliegue (NEXT_PUBLIC_SITE_URL o fallback a Vercel)
   guias/               Guías de contenido (SEO)
   privacidad/page.js
   layout.js              Metadata, JSON-LD, SW, theme inline
@@ -111,10 +113,10 @@ app/
   icon.js                Favicon
   opengraph-image.js
   sitemap.js
+  robots.js
 public/
   manifest.json
   sw.js                  Service Worker
-  robots.txt
 ```
 
 ## Seguridad de `/api/analyze`
@@ -136,7 +138,7 @@ Para antes de mover la app más en serio:
 - [x] Rate limit con Upstash
 - [x] Sentry
 - [x] CI con GitHub Actions
-- [x] Tests con Vitest (`/api/analyze` y `/api/sync`, 40 tests)
+- [x] Tests con Vitest (`/api/analyze` y `/api/sync`, 42 tests)
 - [x] Vinted Francia además de España (mismo euro y misma talla EU — el mercado más simple para empezar)
 - [x] Analítica (Vercel Analytics)
 - [x] Lighthouse en cada pull request, con umbrales calibrados

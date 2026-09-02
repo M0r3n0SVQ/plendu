@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/nextjs'
 import { redis } from '../../lib/redis'
-import { createRateLimiter, getClientIP } from '../../lib/rateLimit'
+import { createRateLimiter, getClientIP, rateLimitResponse, checkContentLength } from '../../lib/rateLimit'
 import { sanitizeHistorial, MAX_HISTORIAL } from '../../lib/historial'
 
 // Vercel: pin to Node runtime (Upstash SDK), force per-request execution.
@@ -40,12 +40,7 @@ function serviceUnavailable() {
 
 export async function GET(request: Request): Promise<Response> {
   const { limited, retryAfter } = await checkRateLimit(getClientIP(request))
-  if (limited) {
-    return Response.json(
-      { error: 'Demasiadas peticiones. Espera un momento.' },
-      { status: 429, headers: { 'Retry-After': String(retryAfter) } }
-    )
-  }
+  if (limited) return rateLimitResponse(retryAfter)
   if (!redis) return serviceUnavailable()
 
   const code = normalizeCode(new URL(request.url).searchParams.get('code'))
@@ -71,12 +66,7 @@ export async function GET(request: Request): Promise<Response> {
 // the 90-day TTL — the privacy policy promises this is possible.
 export async function DELETE(request: Request): Promise<Response> {
   const { limited, retryAfter } = await checkRateLimit(getClientIP(request))
-  if (limited) {
-    return Response.json(
-      { error: 'Demasiadas peticiones. Espera un momento.' },
-      { status: 429, headers: { 'Retry-After': String(retryAfter) } }
-    )
-  }
+  if (limited) return rateLimitResponse(retryAfter)
   if (!redis) return serviceUnavailable()
 
   const code = normalizeCode(new URL(request.url).searchParams.get('code'))
@@ -95,22 +85,11 @@ export async function DELETE(request: Request): Promise<Response> {
 
 export async function POST(request: Request): Promise<Response> {
   const { limited, retryAfter } = await checkRateLimit(getClientIP(request))
-  if (limited) {
-    return Response.json(
-      { error: 'Demasiadas peticiones. Espera un momento.' },
-      { status: 429, headers: { 'Retry-After': String(retryAfter) } }
-    )
-  }
+  if (limited) return rateLimitResponse(retryAfter)
   if (!redis) return serviceUnavailable()
 
-  const clRaw = request.headers.get('content-length')
-  if (!clRaw) {
-    return Response.json({ error: 'Petición inválida.' }, { status: 411 })
-  }
-  const clHeader = parseInt(clRaw, 10)
-  if (isNaN(clHeader) || clHeader > MAX_BODY_BYTES) {
-    return Response.json({ error: 'Petición demasiado grande.' }, { status: 413 })
-  }
+  const clError = checkContentLength(request, MAX_BODY_BYTES)
+  if (clError) return clError
 
   let code: string | null
   let historial: ReturnType<typeof sanitizeHistorial>

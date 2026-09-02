@@ -5,7 +5,7 @@ import {
   MERCADOS, MERCADO_DEFAULT, isMercadoId,
   DUDOSO_FIELDS, ALERTA_MESSAGES, type AlertaCode, type MercadoId,
 } from '../../lib/vintedOptions'
-import { createRateLimiter, getClientIP } from '../../lib/rateLimit'
+import { createRateLimiter, getClientIP, rateLimitResponse, checkContentLength } from '../../lib/rateLimit'
 
 const ALERTA_CODES = Object.keys(ALERTA_MESSAGES) as AlertaCode[]
 
@@ -73,13 +73,26 @@ export function validateFoto(foto: unknown): foto is FotoPayload {
 // length/type edge cases before anything reaches the client, and the single
 // declared source of truth for what a "safe" ficha looks like.
 const fichaResponseSchema = z.object({
-  titulo:      z.string().trim().min(1).max(100),
-  descripcion: z.string().trim().min(1).max(1000),
-  precio:      z.number().finite().min(0).transform(v => Math.min(9999, v)),
-  estado:      z.string().trim().max(100).catch(''),
-  categoria:   z.string().trim().max(100).catch(''),
-  marca:       z.string().trim().max(100).catch(''),
-  talla:       z.string().trim().max(100).catch(''),
+  // Trimmed-then-empty still rejects the whole response (titulo/descripcion
+  // are the two fields with no usable fallback) — but an over-length value
+  // truncates instead of rejecting, same as precio clamps instead of
+  // rejecting below. Structured Outputs enforces the field's *type*, not a
+  // max length, so the model exceeding the prompt's "máx 80/800 caracteres"
+  // guidance is a real, reachable case, not just defensive paranoia.
+  titulo:      z.string().trim().min(1).transform(v => v.slice(0, 100)),
+  descripcion: z.string().trim().min(1).transform(v => v.slice(0, 1000)),
+  // Clamps both ends instead of rejecting — .min(0) as a validator (rather
+  // than folding into the transform below) would reject the whole response
+  // on a negative value, same asymmetric-reject bug the truncate comments
+  // above are about, just on the lower bound instead of string length.
+  precio:      z.number().finite().transform(v => Math.min(9999, Math.max(0, v))),
+  // Same truncate-not-reject/wipe rule as titulo/descripcion — only a
+  // non-string value falls back to '' via .catch(); an overlong string is
+  // truncated to 100 chars, not discarded.
+  estado:      z.string().trim().transform(v => v.slice(0, 100)).catch(''),
+  categoria:   z.string().trim().transform(v => v.slice(0, 100)).catch(''),
+  marca:       z.string().trim().transform(v => v.slice(0, 100)).catch(''),
+  talla:       z.string().trim().transform(v => v.slice(0, 100)).catch(''),
   campos_dudosos: z.array(z.string()).catch([])
     .transform(arr => [...new Set(arr.filter(f => (DUDOSO_FIELDS as readonly string[]).includes(f)))]),
   // Only ever one of our own fixed codes — never the model's own prose — so
@@ -97,28 +110,26 @@ const fichaResponseSchema = z.object({
 // (título, descripción, and the literal categoria/estado enum values) needs
 // to come out in the target market's language.
 function buildPrompt(mercado: MercadoId, notas: string): string {
-  const { nombre, idioma, categoriaOptions, estadoOptions } = MERCADOS[mercado]
-  const categoriaMujer  = categoriaOptions.slice(0, 15).join(' · ')
-  const categoriaHombre = categoriaOptions.slice(15, 24).join(' · ')
-  const categoriaNinos  = categoriaOptions.slice(24, 28).join(' · ')
+  const {
+    nombre, idioma, categoriaOptions, estadoOptions, categoriaGeneroCounts,
+    bilinguismoHint, condicionFrases, condicionEstadoIntro, ejemploAdicional,
+  } = MERCADOS[mercado]
+  const categoriaMujer  = categoriaOptions.slice(0, categoriaGeneroCounts.mujer).join(' · ')
+  const categoriaHombre = categoriaOptions
+    .slice(categoriaGeneroCounts.mujer, categoriaGeneroCounts.mujer + categoriaGeneroCounts.hombre)
+    .join(' · ')
+  const categoriaNinos  = categoriaOptions.slice(categoriaGeneroCounts.mujer + categoriaGeneroCounts.hombre).join(' · ')
   const [nuevoConEtiquetas, nuevoSinEtiquetas, muyBueno, bueno, satisfactorio] = estadoOptions
 
   const idiomaInstruccion = mercado === MERCADO_DEFAULT ? '' : `
 IMPORTANTE — este anuncio es para Vinted ${nombre}: escribe TÍTULO y DESCRIPCIÓN íntegramente en ${idioma}, con vocabulario de moda natural y corriente en ese idioma (no una traducción literal palabra por palabra). Usa como referencia de estilo el ejemplo en ${idioma} más abajo. El resto de esta instrucción está en español y así se queda — incluido "_analisis", que es solo tu razonamiento interno y nunca se muestra al vendedor.
 `
 
-  const bilinguismo = mercado === 'FR'
-    ? '· Bilingüismo útil (francés/inglés): pull/sweat · basket/sneakers · jean/denim · manteau/coat · veste/jacket'
-    : '· Bilingüismo útil: sudadera/hoodie · zapatillas/sneakers · vaqueros/jeans · camiseta/tshirt · abrigo/coat · chaqueta/jacket'
+  const condicionEstado = `${condicionEstadoIntro} ${estadoOptions
+    .map((label, i) => `"${label}" → ${condicionFrases[i]}`)
+    .join(' · ')}`
 
-  const condicionEstado = mercado === 'FR'
-    ? `Condition (état), a incluir en la descripción EN FRANCÉS: "${nuevoConEtiquetas}" → "avec étiquette d'origine" · "${nuevoSinEtiquetas}" → "jamais porté" · "${muyBueno}" → "sans tache ni défaut" · "${bueno}" → "légère usure, sans tache" · "${satisfactorio}" → [décris le défaut principal en français]`
-    : `Condición de estado: "${nuevoConEtiquetas}" → "con etiqueta original" · "${nuevoSinEtiquetas}" → "sin uso aparente" · "${muyBueno}" → "sin manchas ni desperfectos" · "${bueno}" → "desgaste muy leve, sin manchas" · "${satisfactorio}" → [describe el defecto principal]`
-
-  const ejemploMercado = mercado === 'FR' ? `
-
-EJEMPLO 3 (mercado Francia — título y descripción en francés; categoría, estado y el resto de la ficha igual que en los otros ejemplos):
-{"_analisis":"Pull Zara col rond gris chiné. Tricot fin, coupe droite. Étiquette visible: Zara, taille M. Sans défaut apparent.","titulo":"Pull Zara sweater gris chiné col rond coupe droite taille M","descripcion":"Pull Zara gris chiné, coupe droite et col rond, agréable à porter au quotidien.\\n\\nTricot fin mais chaud, sans aucune bouloche ni tache visible.\\n\\nÉtat : très bon état, sans tache ni défaut\\nTaille : M\\nMesures à plat : (a completar)\\n\\nEnvoi rapide, n'hésitez pas à me contacter pour toute question.","precio":12,"categoria":"Pulls et sweats","estado":"Très bon état","marca":"Zara","talla":"M","campos_dudosos":[],"alerta":""}` : ''
+  const ejemploMercado = ejemploAdicional
 
   return `Eres un experto en moda de segunda mano que vende en Vinted ${nombre}. Analiza las fotos y genera una ficha de venta optimizada para máxima visibilidad en búsquedas.
 ${idiomaInstruccion}${notas ? `\nEl vendedor añadió esta nota — tenla en cuenta si aporta información real sobre la prenda, pero las fotos mandan si hay contradicción: "${notas}"\n` : ''}
@@ -133,7 +144,7 @@ PASO 2 — Usa tu _analisis para rellenar cada campo:
 
 TÍTULO — máx 80 caracteres, keyword-rich para búsquedas Vinted:
 Orden: [tipo] [marca] [color/print] [características clave] [estilo si aplica] talla [talla]
-${bilinguismo}
+${bilinguismoHint}
 · Estilos si aplica: streetwear · sport · casual · formal · retro · outdoor
 · "Sudadera hoodie Puma logo gráfico azul negra capucha cordón streetwear talla L"
 · "Vaqueros jeans Levi's 501 azul oscuro slim fit desgastado talla 32"
@@ -204,12 +215,7 @@ Responde SOLO con JSON válido: {"_analisis":"","titulo":"","descripcion":"","pr
 export async function POST(request: Request): Promise<Response> {
   // ── Rate limit ───────────────────────────────────────────────────────────────
   const { limited, retryAfter } = await checkRateLimit(getClientIP(request))
-  if (limited) {
-    return Response.json(
-      { error: 'Demasiadas peticiones. Espera un momento.' },
-      { status: 429, headers: { 'Retry-After': String(retryAfter) } }
-    )
-  }
+  if (limited) return rateLimitResponse(retryAfter)
 
   if (!openai) {
     return Response.json(
@@ -219,14 +225,8 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   // ── Payload size (Content-Length header, required) ───────────────────────────
-  const clRaw = request.headers.get('content-length')
-  if (!clRaw) {
-    return Response.json({ error: 'Petición inválida.' }, { status: 411 })
-  }
-  const clHeader = parseInt(clRaw, 10)
-  if (isNaN(clHeader) || clHeader > MAX_BODY_BYTES) {
-    return Response.json({ error: 'Petición demasiado grande.' }, { status: 413 })
-  }
+  const clError = checkContentLength(request, MAX_BODY_BYTES)
+  if (clError) return clError
 
   // ── Parse & validate body ────────────────────────────────────────────────────
   let fotos: Record<string, unknown>

@@ -39,10 +39,28 @@ export async function pushSync(code: string, historial: HistorialItem[]): Promis
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code, historial }),
+    // keepalive lets this survive page unload/backgrounding instead of being
+    // cancelled mid-flight — matters here because this is also the fallback
+    // flushPendingPush uses when sendBeacon can't be used (unsupported) or
+    // refuses an oversized payload (its ~64KB cap, easily hit by a full
+    // 10-item historial with thumbnails, well under this endpoint's own
+    // MAX_BODY_BYTES).
+    keepalive: true,
   })
   const data: SyncPushResponse & SyncErrorResponse = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || 'No se pudo activar la sincronización.')
   return data
+}
+
+// Fire-and-forget variant for the tab-closing/backgrounding case. Preferred
+// over pushSync there because it doesn't need the page to stay alive long
+// enough to read a response — but it shares the same ~64KB payload cap as
+// fetch's keepalive flag, so for a large historial it can still return
+// false and fall back to the (now keepalive) pushSync above.
+export function pushSyncBeacon(code: string, historial: HistorialItem[]): boolean {
+  if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return false
+  const blob = new Blob([JSON.stringify({ code, historial })], { type: 'application/json' })
+  return navigator.sendBeacon('/api/sync', blob)
 }
 
 export async function pullSync(code: string): Promise<HistorialItem[]> {

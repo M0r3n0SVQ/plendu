@@ -1,9 +1,10 @@
 import Link from 'next/link'
+import { SITE_URL } from '../../lib/siteUrl'
 
 export const metadata = {
   title: 'Qué medidas poner en un anuncio de Vinted · Plendu',
   description: 'Por qué la talla de la etiqueta no basta y cómo medir una prenda en plano en menos de un minuto, sin cinta métrica especial.',
-  alternates: { canonical: 'https://plendu.app/guias/que-medidas-poner-en-vinted' },
+  alternates: { canonical: `${SITE_URL}/guias/que-medidas-poner-en-vinted` },
   robots: { index: true, follow: true },
 }
 

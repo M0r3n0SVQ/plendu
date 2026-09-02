@@ -1,9 +1,10 @@
 import Link from 'next/link'
+import { SITE_URL } from '../lib/siteUrl'
 
 export const metadata = {
   title: 'Guías para vender en Vinted · Plendu',
   description: 'Trucos prácticos para fotografiar, tasar y describir ropa de segunda mano en Vinted, escritos por gente que vende de verdad.',
-  alternates: { canonical: 'https://plendu.app/guias' },
+  alternates: { canonical: `${SITE_URL}/guias` },
   robots: { index: true, follow: true },
 }
 

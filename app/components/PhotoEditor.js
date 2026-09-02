@@ -50,6 +50,8 @@ export default function PhotoEditor({ photoUrl, onApply, onCancel }) {
       ctx.rotate((deg * Math.PI) / 180)
       ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2)
       const blob = await canvasToBlob(canvas)
+      canvas.width = 0
+      canvas.height = 0
       replaceWorkingUrl(URL.createObjectURL(blob))
       setRect(null)
     } catch {
@@ -92,6 +94,10 @@ export default function PhotoEditor({ photoUrl, onApply, onCancel }) {
     ))
   }
 
+  // Also wired to onPointerCancel below — a system gesture mid-drag (pull-
+  // down notification, multi-touch, orientation change) fires pointercancel
+  // instead of pointerup on mobile, and without this the crop rect would
+  // stay visually stuck on screen since dragStartRef never gets cleared.
   const handlePointerUp = () => {
     dragStartRef.current = null
   }
@@ -117,6 +123,8 @@ export default function PhotoEditor({ photoUrl, onApply, onCancel }) {
       const ctx = canvas.getContext('2d')
       ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
       const blob = await canvasToBlob(canvas)
+      canvas.width = 0
+      canvas.height = 0
       replaceWorkingUrl(URL.createObjectURL(blob))
       setRect(null)
     } catch {
@@ -149,6 +157,7 @@ export default function PhotoEditor({ photoUrl, onApply, onCancel }) {
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img

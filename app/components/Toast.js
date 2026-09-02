@@ -1,12 +1,19 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 export default function Toast({ message, type, onDone, duration = 3000, action, onAction }) {
+  // The parent passes a fresh onDone={() => setToast(null)} on every render,
+  // so depending on it directly would restart this timer on any unrelated
+  // parent re-render (typing in another field, etc.) — a ref lets the timer
+  // always call the latest onDone without needing it in the effect's deps.
+  const onDoneRef = useRef(onDone)
+  useEffect(() => { onDoneRef.current = onDone })
+
   useEffect(() => {
-    const t = setTimeout(onDone, duration)
+    const t = setTimeout(() => onDoneRef.current(), duration)
     return () => clearTimeout(t)
-  }, [onDone, duration])
+  }, [duration])
 
   return (
     <div

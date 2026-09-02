@@ -1,9 +1,10 @@
 import './globals.css'
 import { Analytics } from '@vercel/analytics/next'
 import { playfairDisplay, dmSans, dmMono } from './fonts'
+import { SITE_URL } from './lib/siteUrl'
 
 export const metadata = {
-  metadataBase: new URL('https://plendu.app'),
+  metadataBase: new URL(SITE_URL),
   title: 'Plendu · Fichas para Vinted en segundos',
   description: 'Sube hasta 4 fotos de tu prenda y la IA genera el título, descripción, precio y categoría perfectos para Vinted España. Gratis, sin registro.',
   manifest: '/manifest.json',
@@ -21,7 +22,7 @@ export const metadata = {
     type: 'website',
     siteName: 'Plendu',
     locale: 'es_ES',
-    url: 'https://plendu.app',
+    url: SITE_URL,
   },
   twitter: {
     card: 'summary_large_image',
@@ -37,7 +38,7 @@ export const metadata = {
     },
   },
   alternates: {
-    canonical: 'https://plendu.app',
+    canonical: SITE_URL,
   },
   keywords: ['vinted', 'ficha vinted', 'vender ropa', 'segunda mano', 'inteligencia artificial', 'ia moda'],
 }
@@ -55,7 +56,7 @@ const jsonLd = {
   '@context': 'https://schema.org',
   '@type': 'WebApplication',
   name: 'Plendu',
-  url: 'https://plendu.app',
+  url: SITE_URL,
   description: 'Genera fichas perfectas para Vinted en segundos con inteligencia artificial. Sube hasta 4 fotos y obtén título, descripción, precio, categoría, estado, marca y talla.',
   applicationCategory: 'ProductivityApplication',
   operatingSystem: 'Web',

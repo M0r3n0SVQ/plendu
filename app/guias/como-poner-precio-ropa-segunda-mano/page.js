@@ -1,9 +1,10 @@
 import Link from 'next/link'
+import { SITE_URL } from '../../lib/siteUrl'
 
 export const metadata = {
   title: 'Cómo poner precio a la ropa de segunda mano · Plendu',
   description: 'Qué mirar antes de poner un número en Vinted: estado, marca, temporada y cómo funciona la negociación. Sin fórmulas mágicas, con criterio real.',
-  alternates: { canonical: 'https://plendu.app/guias/como-poner-precio-ropa-segunda-mano' },
+  alternates: { canonical: `${SITE_URL}/guias/como-poner-precio-ropa-segunda-mano` },
   robots: { index: true, follow: true },
 }
 

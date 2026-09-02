@@ -1,9 +1,10 @@
 import Link from 'next/link'
+import { SITE_URL } from '../../lib/siteUrl'
 
 export const metadata = {
   title: 'Cómo fotografiar ropa para Vinted · Plendu',
   description: 'Luz, fondo, ángulos y los detalles que hacen que una prenda se vea bien en Vinted sin retocar nada. Guía práctica con lo que de verdad importa.',
-  alternates: { canonical: 'https://plendu.app/guias/como-fotografiar-ropa-vinted' },
+  alternates: { canonical: `${SITE_URL}/guias/como-fotografiar-ropa-vinted` },
   robots: { index: true, follow: true },
 }
 

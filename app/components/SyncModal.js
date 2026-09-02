@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { generateSyncCode, pushSync, pullSync, deleteSync } from '../lib/syncClient'
+import { copyToClipboard } from '../lib/clipboard'
 
 export default function SyncModal({ currentCode, historial, onActivate, onDeactivate, onDeleted, onMerged, onClose }) {
   const [inputCode, setInputCode] = useState('')
@@ -41,7 +42,10 @@ export default function SyncModal({ currentCode, historial, onActivate, onDeacti
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(currentCode)
+      // copyToClipboard falls back to execCommand on http/restricted
+      // contexts, where navigator.clipboard is undefined and a direct call
+      // would throw immediately — same helper FichaPanel uses.
+      await copyToClipboard(currentCode)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch { /* clipboard unavailable — the code is still selectable text */ }

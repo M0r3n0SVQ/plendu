@@ -9,6 +9,33 @@ export function getClientIP(request: Request): string {
   )
 }
 
+// Shared 429 body/headers for every rate-limited route — kept in one place
+// so a future change (wording, an added header) doesn't need editing at
+// each call site and risk drifting between them.
+export function rateLimitResponse(retryAfter: number): Response {
+  return Response.json(
+    { error: 'Demasiadas peticiones. Espera un momento.' },
+    { status: 429, headers: { 'Retry-After': String(retryAfter) } }
+  )
+}
+
+// Validates the Content-Length header before the body is even read — a
+// missing header is rejected outright (411) rather than trusting an
+// unbounded read, and an oversized one is rejected (413) without buffering
+// it. Returns the Response to return as-is, or null if the request can
+// proceed.
+export function checkContentLength(request: Request, maxBytes: number): Response | null {
+  const clRaw = request.headers.get('content-length')
+  if (!clRaw) {
+    return Response.json({ error: 'Petición inválida.' }, { status: 411 })
+  }
+  const clHeader = parseInt(clRaw, 10)
+  if (isNaN(clHeader) || clHeader > maxBytes) {
+    return Response.json({ error: 'Petición demasiado grande.' }, { status: 413 })
+  }
+  return null
+}
+
 interface RateLimiterOptions {
   prefix: string
   windowMs: number

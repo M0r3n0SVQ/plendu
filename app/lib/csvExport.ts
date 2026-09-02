@@ -23,7 +23,7 @@ export function historialToCSV(historial: HistorialItem[]): string {
     item.ficha.talla,
     item.ficha.medidas || '',
     Array.isArray(item.ficha.camposDudosos) ? item.ficha.camposDudosos.join('; ') : '',
-    (item.ficha.alerta && ALERTA_MESSAGES[item.ficha.alerta as keyof typeof ALERTA_MESSAGES]) || '',
+    (item.ficha.alerta && ALERTA_MESSAGES[item.ficha.alerta]) || '',
     item.vendida ? 'Sí' : 'No',
     item.vendida && item.precioVenta != null ? item.precioVenta : '',
   ])
@@ -31,8 +31,11 @@ export function historialToCSV(historial: HistorialItem[]): string {
   return '﻿' + [headers, ...rows].map(row => row.map(csvField).join(',')).join('\r\n')
 }
 
-export function downloadTextFile(filename: string, content: string, mime: string): void {
-  const blob = new Blob([content], { type: mime })
+// revokeDelayMs: 0 revokes right after the click dispatch (fine for the
+// small text blobs downloadTextFile below produces). A caller downloading a
+// larger binary blob (e.g. an image) can pass a delay instead, to leave the
+// URL valid a little longer while the browser's download actually starts.
+export function downloadBlob(filename: string, blob: Blob, revokeDelayMs = 0): void {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -40,5 +43,10 @@ export function downloadTextFile(filename: string, content: string, mime: string
   document.body.appendChild(a)
   a.click()
   a.remove()
-  URL.revokeObjectURL(url)
+  if (revokeDelayMs > 0) setTimeout(() => URL.revokeObjectURL(url), revokeDelayMs)
+  else URL.revokeObjectURL(url)
+}
+
+export function downloadTextFile(filename: string, content: string, mime: string): void {
+  downloadBlob(filename, new Blob([content], { type: mime }))
 }

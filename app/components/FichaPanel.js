@@ -1,14 +1,29 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
-import { MERCADOS, MERCADO_DEFAULT, TALLA_OPTIONS, ALERTA_MESSAGES } from '../lib/vintedOptions'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { MERCADOS, resolveMercadoId, TALLA_OPTIONS, ALERTA_MESSAGES } from '../lib/vintedOptions'
 import { MEDIDAS_MAX_LEN } from '../lib/historial'
 import { copyToClipboard } from '../lib/clipboard'
 import { buildStoryImage } from '../lib/imageUtils'
+import { downloadBlob } from '../lib/csvExport'
+
+// estadoOptions is ordered green→green→green→yellow→orange (etiqueta nueva
+// → satisfactorio) in every mercado, so indexing into it works regardless
+// of which language ficha.estado is actually written in.
+const ESTADO_DOT_COLORS = ['green', 'green', 'green', 'yellow', 'orange']
+
+// Shared by copiar/copiarTodo below — cancels whichever "hide the badge"
+// timer this ref is already holding before scheduling the next one, so a
+// still-pending timer from a previous copy never fires late and wipes out
+// feedback for a newer one.
+function scheduleFeedbackClear(timerRef, clear) {
+  clearTimeout(timerRef.current)
+  timerRef.current = setTimeout(clear, 2000)
+}
 
 export default function FichaPanel({
   ficha: fichaInit, thumbnail, onReset, onVolver, onRegenerar,
-  hayHistorial, showToast, medidas, onMedidasChange,
+  hayHistorial, showToast, medidas, onMedidasChange, onFichaChange,
 }) {
   const [ficha, setFicha]             = useState(fichaInit)
   const [editando, setEditando]       = useState(null)   // 'titulo' | 'descripcion'
@@ -20,26 +35,38 @@ export default function FichaPanel({
   // Reload local ficha when a new ficha arrives (AI result or historial item)
   useEffect(() => { setFicha(fichaInit) }, [fichaInit])
 
-  // Historial entries saved before P1 (multi-mercado) existed have no
-  // ficha.mercado — fall back to ES so their ESTADO/CATEGORÍA still match a
-  // known option instead of showing blank.
-  const { estadoOptions, categoriaOptions } = MERCADOS[ficha.mercado] || MERCADOS[MERCADO_DEFAULT]
+  // ficha.mercado is already validated by sanitizeFicha before a ficha
+  // reaches here — resolveMercadoId uses the same fallback logic (not a
+  // bare `||`) so this can't silently accept something the sanitizer would
+  // have rejected, and stays in sync with it if the set of markets changes.
+  const { estadoOptions, categoriaOptions } = MERCADOS[resolveMercadoId(ficha.mercado)]
+  const estadoDotColor = ESTADO_DOT_COLORS[estadoOptions.indexOf(ficha.estado)] || 'gray'
 
   // Fields the AI flagged as an uncertain estimate (e.g. talla guessed with no visible tag)
   const esDudoso = (campo) => Array.isArray(ficha.camposDudosos) && ficha.camposDudosos.includes(campo)
+  const dudosoBadge = (campo) => esDudoso(campo) && (
+    <span className="dudoso-badge" title="Estimado por la IA — revísalo antes de publicar">ESTIMADO</span>
+  )
 
   // A field the AI flagged as uncertain stops being uncertain once a human
   // has actually looked at it and (re)typed the value — clear the flag
   // alongside the edit so "ESTIMADO" doesn't keep pointing at a value nobody
   // estimated anymore.
   const setCampoVerificado = (campo, valor) => {
-    setFicha(prev => ({
-      ...prev,
-      [campo]: valor,
-      camposDudosos: Array.isArray(prev.camposDudosos)
+    // Derives camposDudosos from `prev`, not the closed-over `ficha`, so
+    // this stays correct even if two edits ever land in the same React
+    // batch — reading the outer `ficha` here would silently use whatever
+    // camposDudosos looked like before the batch instead of after the
+    // first edit in it. onFichaChange fires from inside the updater for
+    // the same reason; React may invoke it twice in dev/StrictMode, but
+    // it's an idempotent merge into historial so that's harmless.
+    setFicha(prev => {
+      const camposDudosos = Array.isArray(prev.camposDudosos)
         ? prev.camposDudosos.filter(f => f !== campo)
-        : prev.camposDudosos,
-    }))
+        : prev.camposDudosos
+      onFichaChange?.({ [campo]: valor, camposDudosos })
+      return { ...prev, [campo]: valor, camposDudosos }
+    })
   }
 
   // Web Share API — only available on HTTPS + mobile browsers
@@ -53,18 +80,22 @@ export default function FichaPanel({
   const commitEdit = useCallback(() => {
     if (editando) {
       const trimmed = draft.trim()
-      if (trimmed) setFicha(prev => ({ ...prev, [editando]: trimmed }))
+      if (trimmed) {
+        setFicha(prev => ({ ...prev, [editando]: trimmed }))
+        onFichaChange?.({ [editando]: trimmed })
+      }
     }
     setEditando(null)
-  }, [editando, draft])
+  }, [editando, draft, onFichaChange])
 
   const cancelEdit = () => setEditando(null)
 
+  const copiadoTimerRef = useRef(null)
   const copiar = useCallback((texto, campo) => {
     copyToClipboard(texto)
       .then(() => {
         setCopiado(campo)
-        setTimeout(() => setCopiado(null), 2000)
+        scheduleFeedbackClear(copiadoTimerRef, () => setCopiado(null))
       })
       .catch(() => showToast('No se pudo copiar al portapapeles.', 'error'))
   }, [showToast])
@@ -84,14 +115,23 @@ export default function FichaPanel({
     ].filter(Boolean).join('\n')
   }, [ficha, medidas])
 
+  const copiadoTodoTimerRef = useRef(null)
   const copiarTodo = useCallback(() => {
     copyToClipboard(buildTexto())
       .then(() => {
         setCopiadoTodo(true)
-        setTimeout(() => setCopiadoTodo(false), 2000)
+        scheduleFeedbackClear(copiadoTodoTimerRef, () => setCopiadoTodo(false))
       })
       .catch(() => showToast('No se pudo copiar al portapapeles.', 'error'))
   }, [buildTexto, showToast])
+
+  // Both timers above are cleared on unmount (e.g. NUEVA PRENDA right after
+  // a copy) so a stale one can't fire setCopiado/setCopiadoTodo against a
+  // detached component.
+  useEffect(() => () => {
+    clearTimeout(copiadoTimerRef.current)
+    clearTimeout(copiadoTodoTimerRef.current)
+  }, [])
 
   const compartir = useCallback(async () => {
     if (!canShare) return
@@ -123,7 +163,11 @@ export default function FichaPanel({
     if (creandoStory || !thumbnail) return
     setCreandoStory(true)
     try {
-      const blob = await buildStoryImage({ photoUrl: thumbnail, titulo: ficha.titulo, precio: ficha.precio })
+      // ficha.titulo/precio are typed optional on SafeFicha (a historial
+      // entry loaded from localStorage/sync is untrusted input, unlike a
+      // fresh AI response) — default them so a stale/tampered entry can't
+      // burn a literal "undefined€" into the shared/downloaded image.
+      const blob = await buildStoryImage({ photoUrl: thumbnail, titulo: ficha.titulo || '', precio: ficha.precio ?? 0 })
       const file = new File([blob], 'plendu-story.jpg', { type: 'image/jpeg' })
 
       if (canShare && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
@@ -133,14 +177,7 @@ export default function FichaPanel({
         return
       }
 
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'plendu-story.jpg'
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      downloadBlob('plendu-story.jpg', blob, 1000)
     } catch {
       showToast('No se pudo generar la imagen.', 'error')
     } finally {
@@ -148,12 +185,14 @@ export default function FichaPanel({
     }
   }, [creandoStory, thumbnail, ficha.titulo, ficha.precio, canShare, showToast])
 
+  const alertaMsg = ALERTA_MESSAGES[ficha.alerta]
+
   return (
     <div className="ficha">
-      {ALERTA_MESSAGES[ficha.alerta] && (
+      {alertaMsg && (
         <div className="ficha-alert" role="alert">
           <span className="ficha-alert-icon" aria-hidden="true">!</span>
-          <span>{ALERTA_MESSAGES[ficha.alerta]}</span>
+          <span>{alertaMsg}</span>
         </div>
       )}
 
@@ -181,9 +220,9 @@ export default function FichaPanel({
       <div className="ficha-divider" />
 
       {[
-        { key: 'titulo',      label: 'TÍTULO',      value: ficha.titulo,      tipo: 'input'    },
-        { key: 'descripcion', label: 'DESCRIPCIÓN', value: ficha.descripcion, tipo: 'textarea' },
-      ].map(({ key, label, value, tipo }) => (
+        { key: 'titulo',      label: 'TÍTULO',      value: ficha.titulo,      tipo: 'input',    maxLen: 80,  overLabel: 'demasiado largo' },
+        { key: 'descripcion', label: 'DESCRIPCIÓN', value: ficha.descripcion, tipo: 'textarea', maxLen: 800, overLabel: 'puede ser demasiado larga' },
+      ].map(({ key, label, value, tipo, maxLen, overLabel }) => (
         <div key={key}>
           <div className="ficha-field">
             <div className="ficha-field-header">
@@ -259,18 +298,10 @@ export default function FichaPanel({
               <p className={`ficha-field-value${key === 'titulo' ? ' ficha-titulo-value' : ' ficha-desc-value'}`}>{value}</p>
             )}
 
-            {key === 'titulo' && (
-              <p className={`ficha-char-count${(editando === key ? draft : value).length > 80 ? ' over' : ''}`}>
-                {(editando === key ? draft : value).length}/80 caracteres
-                {(editando === key ? draft : value).length > 80 ? ' · demasiado largo' : ''}
-              </p>
-            )}
-            {key === 'descripcion' && (
-              <p className={`ficha-char-count${(editando === key ? draft : value).length > 800 ? ' over' : ''}`}>
-                {(editando === key ? draft : value).length}/800 caracteres
-                {(editando === key ? draft : value).length > 800 ? ' · puede ser demasiado larga' : ''}
-              </p>
-            )}
+            <p className={`ficha-char-count${(editando === key ? draft : value).length > maxLen ? ' over' : ''}`}>
+              {(editando === key ? draft : value).length}/{maxLen} caracteres
+              {(editando === key ? draft : value).length > maxLen ? ` · ${overLabel}` : ''}
+            </p>
           </div>
           <div className="ficha-divider" />
         </div>
@@ -288,7 +319,11 @@ export default function FichaPanel({
               min="0"
               max="9999"
               step="0.5"
-              onChange={e => setFicha(prev => ({ ...prev, precio: Math.max(0, parseFloat(e.target.value) || 0) }))}
+              onChange={e => {
+                const precio = Math.max(0, parseFloat(e.target.value) || 0)
+                setFicha(prev => ({ ...prev, precio }))
+                onFichaChange?.({ precio })
+              }}
               aria-label="Precio en euros"
             />
             <span className="meta-precio-suffix">€</span>
@@ -300,18 +335,11 @@ export default function FichaPanel({
             ESTADO
             {ficha.estado && (
               <span
-                className={`estado-dot estado-dot--${
-                  ['Nuevo con etiquetas', 'Nuevo sin etiquetas', 'Muy bueno'].includes(ficha.estado) ? 'green'
-                  : ficha.estado === 'Bueno' ? 'yellow'
-                  : ficha.estado === 'Satisfactorio' ? 'orange'
-                  : 'gray'
-                }`}
+                className={`estado-dot estado-dot--${estadoDotColor}`}
                 aria-hidden="true"
               />
             )}
-            {esDudoso('estado') && (
-              <span className="dudoso-badge" title="Estimado por la IA — revísalo antes de publicar">ESTIMADO</span>
-            )}
+            {dudosoBadge('estado')}
           </span>
           <select
             className="meta-input meta-select"
@@ -329,9 +357,7 @@ export default function FichaPanel({
         <div className="ficha-meta-field">
           <span className="ficha-meta-label">
             CATEGORÍA
-            {esDudoso('categoria') && (
-              <span className="dudoso-badge" title="Estimado por la IA — revísalo antes de publicar">ESTIMADO</span>
-            )}
+            {dudosoBadge('categoria')}
           </span>
           <input
             className="meta-input"
@@ -349,9 +375,7 @@ export default function FichaPanel({
         <div className="ficha-meta-field">
           <span className="ficha-meta-label">
             MARCA
-            {esDudoso('marca') && (
-              <span className="dudoso-badge" title="Estimado por la IA — revísalo antes de publicar">ESTIMADO</span>
-            )}
+            {dudosoBadge('marca')}
           </span>
           <input
             className="meta-input"
@@ -365,9 +389,7 @@ export default function FichaPanel({
         <div className="ficha-meta-field">
           <span className="ficha-meta-label">
             TALLA
-            {esDudoso('talla') && (
-              <span className="dudoso-badge" title="Estimado por la IA — revísalo antes de publicar">ESTIMADO</span>
-            )}
+            {dudosoBadge('talla')}
           </span>
           <input
             className="meta-input"

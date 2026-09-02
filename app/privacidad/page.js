@@ -1,9 +1,10 @@
 import Link from 'next/link'
+import { SITE_URL } from '../lib/siteUrl'
 
 export const metadata = {
   title: 'Privacidad · Plendu',
   description: 'Política de privacidad de Plendu. Qué datos tratamos, cómo y por qué.',
-  alternates: { canonical: 'https://plendu.app/privacidad' },
+  alternates: { canonical: `${SITE_URL}/privacidad` },
   robots: { index: true, follow: true },
 }
 

@@ -210,6 +210,13 @@ describe('POST /api/analyze — happy path (mocked OpenAI)', () => {
     expect(sentSchema.properties.estado.enum).toContain('Bon état')
     const sentPrompt = createMock.mock.calls.at(-1)[0].messages[0].content[0].text
     expect(sentPrompt).toContain('francés')
+    // Market-specific prompt content (bilingual hint, condición de estado
+    // phrasing, worked example) lives as data on MERCADOS.FR in
+    // vintedOptions.ts, not as inline checks in buildPrompt — these confirm
+    // it actually reaches the prompt sent to OpenAI.
+    expect(sentPrompt).toContain('Bilingüismo útil (francés/inglés)')
+    expect(sentPrompt).toContain('"Neuf avec étiquette" → "avec étiquette d\'origine"')
+    expect(sentPrompt).toContain('EJEMPLO 3 (mercado Francia')
   })
 
   it('falls back to mercado ES for an unrecognized mercado value instead of erroring', async () => {
@@ -275,6 +282,71 @@ describe('POST /api/analyze — happy path (mocked OpenAI)', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.precio).toBe(9999)
+  })
+
+  it('clamps a negative precio to 0 instead of rejecting the whole response', async () => {
+    createMock.mockResolvedValueOnce({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            _analisis: 'x', titulo: 'x', descripcion: 'x', precio: -5,
+            categoria: 'Camisetas y tops', estado: 'Bueno', marca: '', talla: '',
+            campos_dudosos: [], alerta: '',
+          }),
+        },
+      }],
+    })
+    const req = makeRequest({ fotos: { principal: validFoto } })
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.precio).toBe(0)
+  })
+
+  it('truncates an over-length titulo/descripcion instead of rejecting the whole response', async () => {
+    createMock.mockResolvedValueOnce({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            _analisis: 'x',
+            titulo: 'x'.repeat(150),
+            descripcion: 'y'.repeat(1500),
+            precio: 1,
+            categoria: 'Camisetas y tops', estado: 'Bueno', marca: '', talla: '',
+            campos_dudosos: [], alerta: '',
+          }),
+        },
+      }],
+    })
+    const req = makeRequest({ fotos: { principal: validFoto } })
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.titulo).toHaveLength(100)
+    expect(body.descripcion).toHaveLength(1000)
+  })
+
+  it('truncates an over-length estado/categoria/marca/talla instead of wiping it to empty', async () => {
+    createMock.mockResolvedValueOnce({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            _analisis: 'x', titulo: 'x', descripcion: 'x', precio: 1,
+            categoria: 'z'.repeat(150), estado: 'w'.repeat(150),
+            marca: 'a'.repeat(150), talla: 'b'.repeat(150),
+            campos_dudosos: [], alerta: '',
+          }),
+        },
+      }],
+    })
+    const req = makeRequest({ fotos: { principal: validFoto } })
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.categoria).toHaveLength(100)
+    expect(body.estado).toHaveLength(100)
+    expect(body.marca).toHaveLength(100)
+    expect(body.talla).toHaveLength(100)
   })
 })
 
