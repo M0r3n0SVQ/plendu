@@ -1,7 +1,7 @@
-import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import ImageUploader from './components/ImageUploader'
 import ThemeToggle from './components/ThemeToggle'
+import Footer from './components/Footer'
 
 // Neither renders anything until after a client-side check (onboarding flag /
 // beforeinstallprompt event) — code-split out of the main chunk since they're
@@ -79,16 +79,7 @@ export default function Home() {
         />
       </main>
 
-      <footer className="footer">
-        <span className="footer-logo">Plendu</span>
-        <span>
-          Hecho para vendedores reales · 2026
-          {' · '}
-          <Link href="/guias" className="footer-link">Guías</Link>
-          {' · '}
-          <Link href="/privacidad" className="footer-link">Privacidad</Link>
-        </span>
-      </footer>
+      <Footer />
     </div>
   )
 }

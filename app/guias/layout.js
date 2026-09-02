@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Footer from '../components/Footer'
 
 export default function GuiasLayout({ children }) {
   return (
@@ -24,14 +25,7 @@ export default function GuiasLayout({ children }) {
 
       {children}
 
-      <footer className="footer">
-        <span className="footer-logo">Plendu</span>
-        <span>
-          Hecho para vendedores reales · 2026
-          {' · '}
-          <Link href="/privacidad" className="footer-link">Privacidad</Link>
-        </span>
-      </footer>
+      <Footer showGuias={false} />
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { SITE_URL } from '../lib/siteUrl'
+import Footer from '../components/Footer'
 
 export const metadata = {
   title: 'Privacidad · Plendu',
@@ -120,7 +121,7 @@ export default function Privacidad() {
             resuelve borrando el historial local de tu navegador, y si tienes
             la sincronización activada, eliminando esos datos desde el propio
             menú de sincronización. Si tienes alguna duda, escribe a{' '}
-            <a href="mailto:alvaromorm@hotmail.com">alvaromorm@hotmail.com</a>.
+            <a href="mailto:alvaromorenofp@gmail.com">alvaromorenofp@gmail.com</a>.
           </p>
         </section>
 
@@ -149,14 +150,7 @@ export default function Privacidad() {
         </p>
       </main>
 
-      <footer className="footer">
-        <span className="footer-logo">Plendu</span>
-        <span>
-          Hecho para vendedores reales · 2026
-          {' · '}
-          <Link href="/guias" className="footer-link">Guías</Link>
-        </span>
-      </footer>
+      <Footer showPrivacidad={false} />
     </div>
   )
 }
