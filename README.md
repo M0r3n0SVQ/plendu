@@ -178,4 +178,4 @@ Más en `/privacidad`.
 
 ## Licencia
 
-Sin licencia abierta de momento. Si te interesa contribuir, abre un issue.
+[PolyForm Noncommercial 1.0.0](LICENSE) — puedes leer, clonar y usar el código para cualquier fin no comercial (aprender, probar, un proyecto propio sin ánimo de lucro...), pero no para montar un servicio de pago con él. Si quieres usarlo comercialmente, escríbeme. Si te interesa contribuir, abre un issue.
