@@ -174,6 +174,52 @@ describe('POST /api/analyze — happy path (mocked OpenAI)', () => {
     expect(body.camposDudosos).toEqual(['talla'])
   })
 
+  it('defaults to mercado ES when the request omits it', async () => {
+    const req = makeRequest({ fotos: { principal: validFoto } })
+    const res = await POST(req)
+    const body = await res.json()
+    expect(body.mercado).toBe('ES')
+    const sentSchema = createMock.mock.calls.at(-1)[0].response_format.json_schema.schema
+    expect(sentSchema.properties.categoria.enum).toContain('Camisetas y tops')
+    expect(sentSchema.properties.estado.enum).toContain('Nuevo con etiquetas')
+  })
+
+  it('sends the French categoria/estado enum and echoes mercado FR back', async () => {
+    createMock.mockResolvedValueOnce({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            _analisis: 'x', titulo: 'Pull test', descripcion: 'Description de test.', precio: 8,
+            categoria: 'Pulls et sweats', estado: 'Bon état', marca: '', talla: 'M',
+            campos_dudosos: [], alerta: '',
+          }),
+        },
+      }],
+    })
+    const req = makeRequest({ fotos: { principal: validFoto }, mercado: 'FR' })
+    const res = await POST(req)
+    const body = await res.json()
+    expect(body.mercado).toBe('FR')
+    expect(body.categoria).toBe('Pulls et sweats')
+    expect(body.estado).toBe('Bon état')
+    // The OpenAI request itself must have offered the French enum, not the
+    // Spanish one, or "strict" mode would have rejected the mocked response.
+    const sentSchema = createMock.mock.calls.at(-1)[0].response_format.json_schema.schema
+    expect(sentSchema.properties.categoria.enum).toContain('Pulls et sweats')
+    expect(sentSchema.properties.categoria.enum).not.toContain('Camisetas y tops')
+    expect(sentSchema.properties.estado.enum).toContain('Bon état')
+    const sentPrompt = createMock.mock.calls.at(-1)[0].messages[0].content[0].text
+    expect(sentPrompt).toContain('francés')
+  })
+
+  it('falls back to mercado ES for an unrecognized mercado value instead of erroring', async () => {
+    const req = makeRequest({ fotos: { principal: validFoto }, mercado: 'XX' })
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.mercado).toBe('ES')
+  })
+
   it('drops unrecognized values out of camposDudosos instead of passing them through', async () => {
     createMock.mockResolvedValueOnce({
       choices: [{

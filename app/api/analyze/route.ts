@@ -1,7 +1,10 @@
 import OpenAI from 'openai'
 import * as Sentry from '@sentry/nextjs'
 import { z } from 'zod'
-import { ESTADO_OPTIONS, CATEGORIA_OPTIONS, DUDOSO_FIELDS, ALERTA_MESSAGES, type AlertaCode } from '../../lib/vintedOptions'
+import {
+  MERCADOS, MERCADO_DEFAULT, isMercadoId,
+  DUDOSO_FIELDS, ALERTA_MESSAGES, type AlertaCode, type MercadoId,
+} from '../../lib/vintedOptions'
 import { createRateLimiter, getClientIP } from '../../lib/rateLimit'
 
 const ALERTA_CODES = Object.keys(ALERTA_MESSAGES) as AlertaCode[]
@@ -86,6 +89,118 @@ const fichaResponseSchema = z.object({
     .transform((a): AlertaCode | '' => (ALERTA_CODES.includes(a as AlertaCode) ? (a as AlertaCode) : '')),
 })
 
+// ─── Prompt ───────────────────────────────────────────────────────────────────
+// Almost everything below stays in Spanish regardless of mercado — it's
+// instructions TO the model (how to classify a photo, internal reasoning in
+// "_analisis") that never reach the client, so translating it would add risk
+// without adding value. Only what actually ends up in the generated ficha
+// (título, descripción, and the literal categoria/estado enum values) needs
+// to come out in the target market's language.
+function buildPrompt(mercado: MercadoId, notas: string): string {
+  const { nombre, idioma, categoriaOptions, estadoOptions } = MERCADOS[mercado]
+  const categoriaMujer  = categoriaOptions.slice(0, 15).join(' · ')
+  const categoriaHombre = categoriaOptions.slice(15, 24).join(' · ')
+  const categoriaNinos  = categoriaOptions.slice(24, 28).join(' · ')
+  const [nuevoConEtiquetas, nuevoSinEtiquetas, muyBueno, bueno, satisfactorio] = estadoOptions
+
+  const idiomaInstruccion = mercado === MERCADO_DEFAULT ? '' : `
+IMPORTANTE — este anuncio es para Vinted ${nombre}: escribe TÍTULO y DESCRIPCIÓN íntegramente en ${idioma}, con vocabulario de moda natural y corriente en ese idioma (no una traducción literal palabra por palabra). Usa como referencia de estilo el ejemplo en ${idioma} más abajo. El resto de esta instrucción está en español y así se queda — incluido "_analisis", que es solo tu razonamiento interno y nunca se muestra al vendedor.
+`
+
+  const bilinguismo = mercado === 'FR'
+    ? '· Bilingüismo útil (francés/inglés): pull/sweat · basket/sneakers · jean/denim · manteau/coat · veste/jacket'
+    : '· Bilingüismo útil: sudadera/hoodie · zapatillas/sneakers · vaqueros/jeans · camiseta/tshirt · abrigo/coat · chaqueta/jacket'
+
+  const condicionEstado = mercado === 'FR'
+    ? `Condition (état), a incluir en la descripción EN FRANCÉS: "${nuevoConEtiquetas}" → "avec étiquette d'origine" · "${nuevoSinEtiquetas}" → "jamais porté" · "${muyBueno}" → "sans tache ni défaut" · "${bueno}" → "légère usure, sans tache" · "${satisfactorio}" → [décris le défaut principal en français]`
+    : `Condición de estado: "${nuevoConEtiquetas}" → "con etiqueta original" · "${nuevoSinEtiquetas}" → "sin uso aparente" · "${muyBueno}" → "sin manchas ni desperfectos" · "${bueno}" → "desgaste muy leve, sin manchas" · "${satisfactorio}" → [describe el defecto principal]`
+
+  const ejemploMercado = mercado === 'FR' ? `
+
+EJEMPLO 3 (mercado Francia — título y descripción en francés; categoría, estado y el resto de la ficha igual que en los otros ejemplos):
+{"_analisis":"Pull Zara col rond gris chiné. Tricot fin, coupe droite. Étiquette visible: Zara, taille M. Sans défaut apparent.","titulo":"Pull Zara sweater gris chiné col rond coupe droite taille M","descripcion":"Pull Zara gris chiné, coupe droite et col rond, agréable à porter au quotidien.\\n\\nTricot fin mais chaud, sans aucune bouloche ni tache visible.\\n\\nÉtat : très bon état, sans tache ni défaut\\nTaille : M\\nMesures à plat : (a completar)\\n\\nEnvoi rapide, n'hésitez pas à me contacter pour toute question.","precio":12,"categoria":"Pulls et sweats","estado":"Très bon état","marca":"Zara","talla":"M","campos_dudosos":[],"alerta":""}` : ''
+
+  return `Eres un experto en moda de segunda mano que vende en Vinted ${nombre}. Analiza las fotos y genera una ficha de venta optimizada para máxima visibilidad en búsquedas.
+${idiomaInstruccion}${notas ? `\nEl vendedor añadió esta nota — tenla en cuenta si aporta información real sobre la prenda, pero las fotos mandan si hay contradicción: "${notas}"\n` : ''}
+PASO 1 — Anota en "_analisis" (máx. 80 palabras, siempre en español) todo lo que observas:
+· Tipo exacto de prenda + género estimado + color(es) específicos (azul marino, burdeos, crema, gris marengo, verde oliva, mostaza, camel, salmón, ocre, tostado, negro carbón, blanco roto...)
+· Material/tejido (felpa, punto, vaquero/denim, lino, satén, cuero, ante, plumón, técnico/mesh, canalé, piqué...)
+· Texto exacto de la etiqueta si visible: marca, talla, composición
+· Características de diseño: logo (tipo, posición, colores), bolsillos, capucha, cremalleras, cordones, ribetes, bordados, estampados, etiquetas interiores, forro, interior
+· Defectos: pilling, manchas, descosidos, desgaste en codos/dobladillos/cuello
+
+PASO 2 — Usa tu _analisis para rellenar cada campo:
+
+TÍTULO — máx 80 caracteres, keyword-rich para búsquedas Vinted:
+Orden: [tipo] [marca] [color/print] [características clave] [estilo si aplica] talla [talla]
+${bilinguismo}
+· Estilos si aplica: streetwear · sport · casual · formal · retro · outdoor
+· "Sudadera hoodie Puma logo gráfico azul negra capucha cordón streetwear talla L"
+· "Vaqueros jeans Levi's 501 azul oscuro slim fit desgastado talla 32"
+· "Zapatillas sneakers Nike Air Max blancas grises running talla 42"
+Sin puntos suspensivos ni emojis en el título
+
+DESCRIPCIÓN — escríbela como la escribiría una persona real vendiendo su ropa, no como una plantilla. Nada de emojis, nada de iconos ni de etiquetas tipo "Detalles:" delante de cada bloque, nada de listas con viñetas. Los saltos de línea son \\n en el JSON:
+
+Primera línea: 1-2 frases naturales presentando la prenda (tipo, marca si hay, color y el rasgo que más destaque). No la escribas como ficha técnica ("Tipo – Marca – rasgo"), escríbela como una frase corriente.
+[línea vacía]
+2-4 frases cortas y sueltas mencionando 3-6 detalles observables (bolsillos, cierres, tejido, estampado...), con tono natural, como si se lo contaras a alguien.
+[línea vacía]
+Estado: [estado en minúscula], [condición en 4-6 palabras]
+Talla: [talla o "(a completar)" si no visible]
+Medidas en plano: (a completar)
+[línea vacía]
+Cierre de 1 frase, natural y variado (no repitas siempre la misma coletilla), sobre envío o disponibilidad para preguntas.
+
+${condicionEstado}
+
+PRECIO — entero o .5, sin €. Base Vinted España 2025:
+Sin marca → camiseta 2-4 · sudadera 4-8 · pantalón 3-9 · vestido 4-11 · abrigo 7-16 · zapatos 4-10 · bolso 4-12
+Fast-fashion (Zara, H&M, Mango, Bershka, Stradivarius, Pull&Bear, Springfield, Lefties) → ×1.5
+Premium (Nike, Adidas, Levi's, Tommy Hilfiger, Calvin Klein, Lacoste, Guess, New Balance, Timberland) → ×2-3
+Lujo (Gucci, Loewe, Prada, Burberry, Versace, Balenciaga, Max Mara, Boss, Massimo Dutti, Hackett) → ×8-30
+Modificadores: "${nuevoConEtiquetas}" +40% · "${bueno}" −15% · "${satisfactorio}" −35%
+Prenda fuera de temporada (abrigo en verano, bañador en invierno) → −15% adicional
+
+ESTADO — solo lo que ves en las fotos:
+"${nuevoConEtiquetas}" — etiqueta original intacta y visible
+"${nuevoSinEtiquetas}" — sin uso, sin defectos, sin etiqueta
+"${muyBueno}" — 1-2 usos, sin pilling, sin manchas, sin desgaste perceptible
+"${bueno}" — uso regular, sin pilling ni manchas, desgaste muy leve en costuras o cierres
+"${satisfactorio}" — pilling apreciable, manchas, descosidos o desgaste notorio
+
+CATEGORÍA — determina primero el género y elige exactamente una:
+· MUJER: escote pronunciado, silueta entallada, cut-out, encaje, vestidos, faldas, lencería, print floral/femenino
+· HOMBRE: corte recto o amplio sin pinzas, cuello mao, camisas de vestir, ropa táctica o de trabajo
+· DUDOSO → si es amplia/oversize → Hombre; si es ceñida → Mujer; última opción: Hombre
+
+Mujer: ${categoriaMujer}
+Hombre: ${categoriaHombre}
+Niños: ${categoriaNinos}
+
+MARCA — nombre exacto de etiqueta o logo. Vacío si no visible.
+TALLA — tal como en etiqueta, convertida siempre a talla europea/EU (Vinted ${nombre} la espera así). Si la etiqueta ya muestra "EU" o un número de ropa normal (XS-XXXL, 34-48), úsalo tal cual.
+Si es CALZADO y la etiqueta muestra varios sistemas a la vez (ej. "US 9 / UK 8 / EU 42.5"), coge siempre el valor EU.
+Si es CALZADO y solo ves US o UK (sin EU visible), conviértelo a EU con esta tabla aproximada (hombre; para mujer resta a la talla EU resultante aprox. 1.5) y añade "talla" a campos_dudosos porque es una conversión, no una lectura directa:
+US 6→EU 39 · US 6.5→EU 39.5 · US 7→EU 40 · US 7.5→EU 40.5 · US 8→EU 41 · US 8.5→EU 42 · US 9→EU 42.5 · US 9.5→EU 43 · US 10→EU 44 · US 10.5→EU 44.5 · US 11→EU 45 · US 12→EU 46 · US 13→EU 47
+PRIORIDAD: etiqueta > estimación visual. Incertidumbre → vacío. Nunca inventes.
+
+CAMPOS_DUDOSOS — array con los nombres exactos ("marca", "talla", "categoria", "estado") de los campos que son una estimación poco fiable: talla calculada a ojo sin etiqueta visible, marca deducida de un logo parcial o no confirmada, categoría dudosa por corte ambiguo, estado difícil de valorar por fotos poco claras. Vacío si tienes confianza razonable en todos. No incluyas un campo solo por rellenar el array.
+
+ALERTA — string vacía salvo que veas uno de estos dos casos, en cuyo caso responde EXACTAMENTE ese código (nunca una frase propia, el texto que se muestra lo pone la app):
+· "ropa_interior_usada" — ropa interior o bañador con aspecto de uso (sin etiquetas ni aspecto de "nuevo"), que Vinted solo permite vender nuevas y con etiqueta.
+· "posible_replica" — sospecha razonable de réplica o falsificación de una marca de lujo (logo, tipografía o acabado que no coincide con el original).
+No marques nada por precaución si no hay un indicio claro — evita falsos positivos, la mayoría de fichas no deberían llevar alerta.
+
+EJEMPLO 1 (streetwear con marca y etiqueta visible):
+{"_analisis":"Nike logo bordado en pecho. Felpa negra con capucha. Etiqueta: Nike, M. Bolsillo canguro. Cordón negro. Ribetes canalé en puños y bajo. Interior afelpado. Sin pilling ni manchas.","titulo":"Sudadera hoodie Nike logo bordado negra capucha cordón sport streetwear talla M","descripcion":"Sudadera Nike con capucha en negro, con el logo bordado en el pecho y capucha con cordón ajustable.\\n\\nTiene bolsillo canguro delantero y el interior es de felpa suave, muy calentita. Puños y bajo con ribete canalé.\\n\\nEstado: muy bueno, sin manchas ni desperfectos\\nTalla: M\\nMedidas en plano: (a completar)\\n\\nEnvío en 24-48h, cualquier duda pregunta sin problema.","precio":20,"categoria":"Jerseys y sudaderas hombre","estado":"Muy bueno","marca":"Nike","talla":"M","campos_dudosos":[],"alerta":""}
+
+EJEMPLO 2 (vestido sin marca ni etiqueta visible — nótese que "talla" lleva una estimación Y aparece en campos_dudosos a la vez):
+{"_analisis":"Vestido midi verde oliva, tirantes finos, escote cruzado. Tejido satinado fluido, cae bien. Sin etiqueta visible. Cremallera lateral oculta. Sin manchas ni enganches.","titulo":"Vestido midi verde oliva satinado tirantes escote cruzado talla M","descripcion":"Vestido midi verde oliva con tirantes finos y escote cruzado que estiliza mucho. El tejido es satinado y cae genial, sin arrugas raras.\\n\\nCierre de cremallera oculta en el lateral. Perfecto para una cena o evento, aunque también se puede llevar más casual con una chaqueta encima.\\n\\nEstado: nuevo sin etiquetas, sin uso aparente\\nTalla: M\\nMedidas en plano: (a completar)\\n\\nEnvío en 24-48h, escríbeme si tienes dudas.","precio":9,"categoria":"Vestidos","estado":"Nuevo sin etiquetas","marca":"","talla":"M","campos_dudosos":["talla"],"alerta":""}${ejemploMercado}
+
+Responde SOLO con JSON válido: {"_analisis":"","titulo":"","descripcion":"","precio":0,"categoria":"","estado":"","marca":"","talla":"","campos_dudosos":[],"alerta":""}`
+}
+
 export async function POST(request: Request): Promise<Response> {
   // ── Rate limit ───────────────────────────────────────────────────────────────
   const { limited, retryAfter } = await checkRateLimit(getClientIP(request))
@@ -116,6 +231,7 @@ export async function POST(request: Request): Promise<Response> {
   // ── Parse & validate body ────────────────────────────────────────────────────
   let fotos: Record<string, unknown>
   let notas: string
+  let mercado: MercadoId
   try {
     const body = await request.json()
     fotos = body?.fotos
@@ -123,6 +239,9 @@ export async function POST(request: Request): Promise<Response> {
     // it's interpolated straight into the prompt below. The strict JSON
     // schema is the real backstop against prompt injection either way.
     notas = typeof body?.notas === 'string' ? body.notas.replace(/\s+/g, ' ').trim().slice(0, 200) : ''
+    // Unknown/missing mercado falls back to ES rather than rejecting the
+    // request — keeps older clients (and the mocked test suite) working.
+    mercado = isMercadoId(body?.mercado) ? body.mercado : MERCADO_DEFAULT
   } catch {
     return Response.json({ error: 'Petición inválida.' }, { status: 400 })
   }
@@ -182,8 +301,8 @@ export async function POST(request: Request): Promise<Response> {
               titulo:      { type: 'string' },
               descripcion: { type: 'string' },
               precio:      { type: 'number' },
-              categoria:   { type: 'string', enum: CATEGORIA_OPTIONS },
-              estado:      { type: 'string', enum: ESTADO_OPTIONS },
+              categoria:   { type: 'string', enum: MERCADOS[mercado].categoriaOptions },
+              estado:      { type: 'string', enum: MERCADOS[mercado].estadoOptions },
               marca:       { type: 'string' },
               talla:       { type: 'string' },
               campos_dudosos: {
@@ -203,85 +322,7 @@ export async function POST(request: Request): Promise<Response> {
           content: [
             {
               type: 'text',
-              text: `Eres un experto en moda de segunda mano que vende en Vinted España. Analiza las fotos y genera una ficha de venta optimizada para máxima visibilidad en búsquedas.
-${notas ? `\nEl vendedor añadió esta nota — tenla en cuenta si aporta información real sobre la prenda, pero las fotos mandan si hay contradicción: "${notas}"\n` : ''}
-PASO 1 — Anota en "_analisis" (máx. 80 palabras) todo lo que observas:
-· Tipo exacto de prenda + género estimado + color(es) específicos (azul marino, burdeos, crema, gris marengo, verde oliva, mostaza, camel, salmón, ocre, tostado, negro carbón, blanco roto...)
-· Material/tejido (felpa, punto, vaquero/denim, lino, satén, cuero, ante, plumón, técnico/mesh, canalé, piqué...)
-· Texto exacto de la etiqueta si visible: marca, talla, composición
-· Características de diseño: logo (tipo, posición, colores), bolsillos, capucha, cremalleras, cordones, ribetes, bordados, estampados, etiquetas interiores, forro, interior
-· Defectos: pilling, manchas, descosidos, desgaste en codos/dobladillos/cuello
-
-PASO 2 — Usa tu _analisis para rellenar cada campo:
-
-TÍTULO — máx 80 caracteres, keyword-rich para búsquedas Vinted:
-Orden: [tipo español] [tipo inglés si añade búsquedas] [marca] [color/print] [características clave] [estilo si aplica] talla [talla]
-· Bilingüismo útil: sudadera/hoodie · zapatillas/sneakers · vaqueros/jeans · camiseta/tshirt · abrigo/coat · chaqueta/jacket
-· Estilos si aplica: streetwear · sport · casual · formal · retro · outdoor
-· "Sudadera hoodie Puma logo gráfico azul negra capucha cordón streetwear talla L"
-· "Vaqueros jeans Levi's 501 azul oscuro slim fit desgastado talla 32"
-· "Zapatillas sneakers Nike Air Max blancas grises running talla 42"
-Sin puntos suspensivos ni emojis en el título
-
-DESCRIPCIÓN — escríbela como la escribiría una persona real vendiendo su ropa, no como una plantilla. Nada de emojis, nada de iconos ni de etiquetas tipo "Detalles:" delante de cada bloque, nada de listas con viñetas. Los saltos de línea son \\n en el JSON:
-
-Primera línea: 1-2 frases naturales presentando la prenda (tipo, marca si hay, color y el rasgo que más destaque). No la escribas como ficha técnica ("Tipo – Marca – rasgo"), escríbela como una frase corriente.
-[línea vacía]
-2-4 frases cortas y sueltas mencionando 3-6 detalles observables (bolsillos, cierres, tejido, estampado...), con tono natural, como si se lo contaras a alguien.
-[línea vacía]
-Estado: [estado en minúscula], [condición en 4-6 palabras]
-Talla: [talla o "(a completar)" si no visible]
-Medidas en plano: (a completar)
-[línea vacía]
-Cierre de 1 frase, natural y variado (no repitas siempre la misma coletilla), sobre envío o disponibilidad para preguntas.
-
-Condición de estado: "Nuevo con etiquetas" → "con etiqueta original" · "Nuevo sin etiquetas" → "sin uso aparente" · "Muy bueno" → "sin manchas ni desperfectos" · "Bueno" → "desgaste muy leve, sin manchas" · "Satisfactorio" → [describe el defecto principal]
-
-PRECIO — entero o .5, sin €. Base Vinted España 2025:
-Sin marca → camiseta 2-4 · sudadera 4-8 · pantalón 3-9 · vestido 4-11 · abrigo 7-16 · zapatos 4-10 · bolso 4-12
-Fast-fashion (Zara, H&M, Mango, Bershka, Stradivarius, Pull&Bear, Springfield, Lefties) → ×1.5
-Premium (Nike, Adidas, Levi's, Tommy Hilfiger, Calvin Klein, Lacoste, Guess, New Balance, Timberland) → ×2-3
-Lujo (Gucci, Loewe, Prada, Burberry, Versace, Balenciaga, Max Mara, Boss, Massimo Dutti, Hackett) → ×8-30
-Modificadores: "Nuevo con etiquetas" +40% · "Bueno" −15% · "Satisfactorio" −35%
-Prenda fuera de temporada (abrigo en verano, bañador en invierno) → −15% adicional
-
-ESTADO — solo lo que ves en las fotos:
-"Nuevo con etiquetas" — etiqueta original intacta y visible
-"Nuevo sin etiquetas" — sin uso, sin defectos, sin etiqueta
-"Muy bueno" — 1-2 usos, sin pilling, sin manchas, sin desgaste perceptible
-"Bueno" — uso regular, sin pilling ni manchas, desgaste muy leve en costuras o cierres
-"Satisfactorio" — pilling apreciable, manchas, descosidos o desgaste notorio
-
-CATEGORÍA — determina primero el género y elige exactamente una:
-· MUJER: escote pronunciado, silueta entallada, cut-out, encaje, vestidos, faldas, lencería, print floral/femenino
-· HOMBRE: corte recto o amplio sin pinzas, cuello mao, camisas de vestir, ropa táctica o de trabajo
-· DUDOSO → si es amplia/oversize → Hombre; si es ceñida → Mujer; última opción: Hombre
-
-Mujer: Camisetas y tops · Camisas y blusas · Jerseys y sudaderas · Vestidos · Faldas · Pantalones · Vaqueros · Chaquetas y abrigos · Ropa de deporte · Ropa interior · Bañadores · Trajes y conjuntos · Calzado mujer · Bolsos · Accesorios mujer
-Hombre: Camisetas · Camisas · Jerseys y sudaderas hombre · Pantalones hombre · Vaqueros hombre · Chaquetas y abrigos hombre · Ropa de deporte hombre · Calzado hombre · Accesorios hombre
-Niños: Ropa niña · Ropa niño · Calzado niños · Accesorios niños
-
-MARCA — nombre exacto de etiqueta o logo. Vacío si no visible.
-TALLA — tal como en etiqueta, convertida siempre a talla española/EU (Vinted España la espera así). Si la etiqueta ya muestra "EU" o un número de ropa normal (XS-XXXL, 34-48), úsalo tal cual.
-Si es CALZADO y la etiqueta muestra varios sistemas a la vez (ej. "US 9 / UK 8 / EU 42.5"), coge siempre el valor EU.
-Si es CALZADO y solo ves US o UK (sin EU visible), conviértelo a EU con esta tabla aproximada (hombre; para mujer resta a la talla EU resultante aprox. 1.5) y añade "talla" a campos_dudosos porque es una conversión, no una lectura directa:
-US 6→EU 39 · US 6.5→EU 39.5 · US 7→EU 40 · US 7.5→EU 40.5 · US 8→EU 41 · US 8.5→EU 42 · US 9→EU 42.5 · US 9.5→EU 43 · US 10→EU 44 · US 10.5→EU 44.5 · US 11→EU 45 · US 12→EU 46 · US 13→EU 47
-PRIORIDAD: etiqueta > estimación visual. Incertidumbre → vacío. Nunca inventes.
-
-CAMPOS_DUDOSOS — array con los nombres exactos ("marca", "talla", "categoria", "estado") de los campos que son una estimación poco fiable: talla calculada a ojo sin etiqueta visible, marca deducida de un logo parcial o no confirmada, categoría dudosa por corte ambiguo, estado difícil de valorar por fotos poco claras. Vacío si tienes confianza razonable en todos. No incluyas un campo solo por rellenar el array.
-
-ALERTA — string vacía salvo que veas uno de estos dos casos, en cuyo caso responde EXACTAMENTE ese código (nunca una frase propia, el texto que se muestra lo pone la app):
-· "ropa_interior_usada" — ropa interior o bañador con aspecto de uso (sin etiquetas ni aspecto de "nuevo"), que Vinted solo permite vender nuevas y con etiqueta.
-· "posible_replica" — sospecha razonable de réplica o falsificación de una marca de lujo (logo, tipografía o acabado que no coincide con el original).
-No marques nada por precaución si no hay un indicio claro — evita falsos positivos, la mayoría de fichas no deberían llevar alerta.
-
-EJEMPLO 1 (streetwear con marca y etiqueta visible):
-{"_analisis":"Nike logo bordado en pecho. Felpa negra con capucha. Etiqueta: Nike, M. Bolsillo canguro. Cordón negro. Ribetes canalé en puños y bajo. Interior afelpado. Sin pilling ni manchas.","titulo":"Sudadera hoodie Nike logo bordado negra capucha cordón sport streetwear talla M","descripcion":"Sudadera Nike con capucha en negro, con el logo bordado en el pecho y capucha con cordón ajustable.\\n\\nTiene bolsillo canguro delantero y el interior es de felpa suave, muy calentita. Puños y bajo con ribete canalé.\\n\\nEstado: muy bueno, sin manchas ni desperfectos\\nTalla: M\\nMedidas en plano: (a completar)\\n\\nEnvío en 24-48h, cualquier duda pregunta sin problema.","precio":20,"categoria":"Jerseys y sudaderas hombre","estado":"Muy bueno","marca":"Nike","talla":"M","campos_dudosos":[],"alerta":""}
-
-EJEMPLO 2 (vestido sin marca ni etiqueta visible — nótese que "talla" lleva una estimación Y aparece en campos_dudosos a la vez):
-{"_analisis":"Vestido midi verde oliva, tirantes finos, escote cruzado. Tejido satinado fluido, cae bien. Sin etiqueta visible. Cremallera lateral oculta. Sin manchas ni enganches.","titulo":"Vestido midi verde oliva satinado tirantes escote cruzado talla M","descripcion":"Vestido midi verde oliva con tirantes finos y escote cruzado que estiliza mucho. El tejido es satinado y cae genial, sin arrugas raras.\\n\\nCierre de cremallera oculta en el lateral. Perfecto para una cena o evento, aunque también se puede llevar más casual con una chaqueta encima.\\n\\nEstado: nuevo sin etiquetas, sin uso aparente\\nTalla: M\\nMedidas en plano: (a completar)\\n\\nEnvío en 24-48h, escríbeme si tienes dudas.","precio":9,"categoria":"Vestidos","estado":"Nuevo sin etiquetas","marca":"","talla":"M","campos_dudosos":["talla"],"alerta":""}
-
-Responde SOLO con JSON válido: {"_analisis":"","titulo":"","descripcion":"","precio":0,"categoria":"","estado":"","marca":"","talla":"","campos_dudosos":[],"alerta":""}`,
+              text: buildPrompt(mercado, notas),
             },
             ...imagenes,
           ],
@@ -321,7 +362,11 @@ Responde SOLO con JSON válido: {"_analisis":"","titulo":"","descripcion":"","pr
     }
 
     const { campos_dudosos: camposDudosos, ...rest } = parsed.data
-    const safeFicha = { ...rest, camposDudosos }
+    // Carries the mercado through to the client so it can render the right
+    // ESTADO/CATEGORÍA options when the ficha is later edited or reopened
+    // from historial — categoria/estado are already the target market's
+    // literal enum values, this just labels which market they belong to.
+    const safeFicha = { ...rest, camposDudosos, mercado }
 
     return Response.json(safeFicha, {
       headers: { 'Cache-Control': 'no-store' },

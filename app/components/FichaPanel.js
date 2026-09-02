@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
-import { ESTADO_OPTIONS, CATEGORIA_OPTIONS, TALLA_OPTIONS, ALERTA_MESSAGES } from '../lib/vintedOptions'
+import { MERCADOS, MERCADO_DEFAULT, TALLA_OPTIONS, ALERTA_MESSAGES } from '../lib/vintedOptions'
 import { MEDIDAS_MAX_LEN } from '../lib/historial'
 import { copyToClipboard } from '../lib/clipboard'
 import { buildStoryImage } from '../lib/imageUtils'
@@ -19,6 +19,11 @@ export default function FichaPanel({
 
   // Reload local ficha when a new ficha arrives (AI result or historial item)
   useEffect(() => { setFicha(fichaInit) }, [fichaInit])
+
+  // Historial entries saved before P1 (multi-mercado) existed have no
+  // ficha.mercado — fall back to ES so their ESTADO/CATEGORÍA still match a
+  // known option instead of showing blank.
+  const { estadoOptions, categoriaOptions } = MERCADOS[ficha.mercado] || MERCADOS[MERCADO_DEFAULT]
 
   // Fields the AI flagged as an uncertain estimate (e.g. talla guessed with no visible tag)
   const esDudoso = (campo) => Array.isArray(ficha.camposDudosos) && ficha.camposDudosos.includes(campo)
@@ -315,7 +320,7 @@ export default function FichaPanel({
             aria-label="Estado de la prenda"
           >
             <option value="">Elegir estado</option>
-            {ESTADO_OPTIONS.map(s => (
+            {estadoOptions.map(s => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
@@ -337,7 +342,7 @@ export default function FichaPanel({
             list="vinted-categorias"
           />
           <datalist id="vinted-categorias">
-            {CATEGORIA_OPTIONS.map(c => <option key={c} value={c} />)}
+            {categoriaOptions.map(c => <option key={c} value={c} />)}
           </datalist>
         </div>
 

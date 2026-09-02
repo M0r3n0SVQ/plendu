@@ -1,4 +1,4 @@
-import { ALERTA_MESSAGES } from './vintedOptions'
+import { ALERTA_MESSAGES, MERCADOS } from './vintedOptions'
 import type { HistorialItem } from './historial'
 
 // Quotes a CSV field and doubles any internal quotes (RFC 4180)
@@ -8,11 +8,12 @@ function csvField(value: unknown): string {
 
 export function historialToCSV(historial: HistorialItem[]): string {
   const headers = [
-    'Fecha', 'Título', 'Descripción', 'Precio', 'Estado', 'Categoría', 'Marca', 'Talla', 'Medidas',
+    'Fecha', 'Mercado', 'Título', 'Descripción', 'Precio', 'Estado', 'Categoría', 'Marca', 'Talla', 'Medidas',
     'Campos estimados', 'Alerta', 'Vendida', 'Precio de venta',
   ]
   const rows = historial.map(item => [
     item.fecha,
+    MERCADOS[item.ficha.mercado]?.nombre || '',
     item.ficha.titulo,
     item.ficha.descripcion,
     item.ficha.precio,

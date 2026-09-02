@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/M0r3n0SVQ/plendu/actions/workflows/ci.yml/badge.svg)](https://github.com/M0r3n0SVQ/plendu/actions/workflows/ci.yml)
 
-App para generar fichas de Vinted a partir de fotos. Subes hasta 4 imágenes de una prenda y la IA te devuelve título, descripción, precio, categoría, estado, marca y talla. Gratis, sin registro.
+App para generar fichas de Vinted a partir de fotos. Subes hasta 4 imágenes de una prenda y la IA te devuelve título, descripción, precio, categoría, estado, marca y talla. Gratis, sin registro. Disponible para Vinted España y Francia.
 
 Web: [plendu.app](https://plendu.vercel.app/)
 
@@ -13,6 +13,8 @@ Las fotos se redimensionan y comprimen en el navegador antes de enviarse. La API
 Sincronización opcional entre dispositivos: se genera un código de 12 caracteres sin cuenta ni email, se introduce en el otro dispositivo y trae el historial. Se guarda en Redis con TTL de 90 días, borrable a demanda desde la propia app.
 
 Cada ficha se puede compartir por Web Share API o exportar como imagen para stories de Instagram/TikTok (foto + título + precio, compuesta en canvas). También hay unas guías en `/guias` con contenido propio para búsquedas informativas (fotografiar ropa, poner precio, tomar medidas).
+
+Selector de mercado (España / Francia): la interfaz de Plendu se queda en español siempre, pero el título y la descripción de la ficha salen en el idioma del mercado elegido, con las categorías y estados que Vinted usa realmente en ese país. Añadir un mercado nuevo es cuestión de datos (`app/lib/vintedOptions.ts`), no de reescribir código.
 
 Es PWA, así que se puede instalar en el móvil. Tiene tema claro y oscuro, y una pantalla de fallback cuando no hay conexión.
 
@@ -100,7 +102,7 @@ app/
     imageUtils.ts       Compresión, miniaturas, canvas de la imagen story
     csvExport.ts         Exportar historial a CSV
     clipboard.ts         Copiar al portapapeles con fallback
-    vintedOptions.ts    Constantes de categorías/estados/tallas/alertas
+    vintedOptions.ts    Categorías/estados/tallas/alertas, por mercado (ES/FR)
   guias/               Guías de contenido (SEO)
   privacidad/page.js
   layout.js              Metadata, JSON-LD, SW, theme inline
@@ -134,7 +136,8 @@ Para antes de mover la app más en serio:
 - [x] Rate limit con Upstash
 - [x] Sentry
 - [x] CI con GitHub Actions
-- [x] Tests con Vitest (`/api/analyze` y `/api/sync`, 35 tests)
+- [x] Tests con Vitest (`/api/analyze` y `/api/sync`, 40 tests)
+- [x] Vinted Francia además de España (mismo euro y misma talla EU — el mercado más simple para empezar)
 - [x] Analítica (Vercel Analytics)
 - [x] Lighthouse en cada pull request, con umbrales calibrados
 - [x] Sincronización de historial entre dispositivos, sin cuenta ni login (código + Upstash)
@@ -148,8 +151,8 @@ Si crece y tiene sentido monetizar:
 - [ ] Stripe con un plan "Pro" barato
 - [ ] Probar Claude Sonnet o gpt-4o para descripciones más finas
 - [ ] Detección de defectos como segundo pase
-- [ ] i18n para Vinted FR/IT/DE/UK/PT
-- [ ] Precio sugerido con datos reales de artículos vendidos
+- [ ] Más mercados de Vinted (IT, DE, UK, PT — el Reino Unido necesita además conversión de libras y de tallas)
+- [ ] Precio sugerido con datos reales de artículos vendidos — descartado por ahora: sin fuente de datos accesible (ver más abajo)
 
 Si llega a ser un producto serio:
 

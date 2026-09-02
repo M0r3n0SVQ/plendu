@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { mergeHistorial, MAX_HISTORIAL } from '../lib/historial'
+import { MERCADOS, MERCADO_DEFAULT, MERCADO_IDS, isMercadoId } from '../lib/vintedOptions'
 import { SYNC_CODE_KEY } from '../lib/syncClient'
 import { compressImage, generateThumbnail, base64ToBlobUrl } from '../lib/imageUtils'
 import { loadHistorial, saveHistorial } from '../lib/historialStore'
@@ -23,6 +24,7 @@ const SLOTS = [
 
 const MAX_MB = 5
 const ALLOWED = ['image/jpeg', 'image/png', 'image/webp']
+const MERCADO_KEY = 'plendu_mercado'
 
 /* ─── Main component ─────────────────────── */
 export default function ImageUploader() {
@@ -40,6 +42,7 @@ export default function ImageUploader() {
   const [editorUrl, setEditorUrl]       = useState(null)
   const [syncCode, setSyncCode]         = useState(null)
   const [showSyncModal, setShowSyncModal] = useState(false)
+  const [mercado, setMercado]           = useState(MERCADO_DEFAULT)
 
   const abortRef            = useRef(null)
   const hintTimerRef        = useRef(null)
@@ -49,6 +52,8 @@ export default function ImageUploader() {
     setPortalTarget(document.getElementById('resultado-col'))
     setHistorial(loadHistorial())
     setSyncCode(localStorage.getItem(SYNC_CODE_KEY))
+    const savedMercado = localStorage.getItem(MERCADO_KEY)
+    if (isMercadoId(savedMercado)) setMercado(savedMercado)
     return () => {
       abortRef.current?.abort()
       clearTimeout(hintTimerRef.current)
@@ -61,6 +66,12 @@ export default function ImageUploader() {
 
   const showToast = useCallback((message, type = 'error', action = null, onAction = null) => {
     setToast({ message, type, action, onAction })
+  }, [])
+
+  const handleMercadoChange = useCallback((value) => {
+    if (!isMercadoId(value)) return
+    setMercado(value)
+    localStorage.setItem(MERCADO_KEY, value)
   }, [])
 
   const processFile = useCallback(async (file, key) => {
@@ -276,6 +287,7 @@ export default function ImageUploader() {
             detalle:   makeFotoPayload(fotos.detalle),
           },
           notas: notas.trim() || undefined,
+          mercado,
         }),
       })
 
@@ -343,7 +355,7 @@ export default function ImageUploader() {
       clearTimeout(timeoutId)
       setCargando(false)
     }
-  }, [fotos, cargando, showToast, notas])
+  }, [fotos, cargando, showToast, notas, mercado])
 
   // ── Enter key shortcut ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -598,6 +610,21 @@ export default function ImageUploader() {
       )}
 
       <div className={`uploader${cargando ? ' uploader-cargando' : ''}`}>
+        <div className="mercado-field">
+          <label htmlFor="mercado-venta" className="foto-count-label">MERCADO DE VENTA</label>
+          <select
+            id="mercado-venta"
+            className="meta-input meta-select"
+            value={mercado}
+            onChange={e => handleMercadoChange(e.target.value)}
+            disabled={cargando}
+          >
+            {MERCADO_IDS.map(id => (
+              <option key={id} value={id}>{MERCADOS[id].nombre}</option>
+            ))}
+          </select>
+        </div>
+
         <div className="foto-count">
           <span className="foto-count-label">FOTOS AÑADIDAS</span>
           <span className="foto-count-num">{numFotos} / 4</span>

@@ -1,4 +1,4 @@
-// Shared with app/api/analyze/route.js (Structured Outputs schema) so the
+// Shared with app/api/analyze/route.ts (Structured Outputs schema) so the
 // AI can never return a category/estado value the client-side <select> and
 // <datalist> don't recognize.
 
@@ -12,23 +12,24 @@ export type DudosoField = (typeof DUDOSO_FIELDS)[number]
 // ever returns one of these codes (never free text) — it renders with
 // role="alert" styling that reads as an authoritative warning, and that text
 // must never be something a crafted "notas" input could talk the model into
-// writing.
+// writing. Kept in Spanish regardless of mercado — it's the app's own UI
+// chrome, not part of the generated listing content.
 export const ALERTA_MESSAGES = {
   ropa_interior_usada: 'Esta prenda parece ropa interior o bañador con uso. Vinted solo permite vender este tipo de prendas nuevas y con etiqueta — revisa sus normas antes de publicar.',
   posible_replica: 'El logo, la tipografía o el acabado no terminan de coincidir con el original. Antes de publicarla como una prenda de marca, confirma que no sea una réplica.',
 } as const
 export type AlertaCode = keyof typeof ALERTA_MESSAGES
 
-export const ESTADO_OPTIONS = [
+// ─── Vinted España ────────────────────────────────────────────────────────
+const ESTADO_OPTIONS_ES = [
   'Nuevo con etiquetas',
   'Nuevo sin etiquetas',
   'Muy bueno',
   'Bueno',
   'Satisfactorio',
 ] as const
-export type Estado = (typeof ESTADO_OPTIONS)[number]
 
-export const CATEGORIA_OPTIONS = [
+const CATEGORIA_OPTIONS_ES = [
   // Mujer
   'Camisetas y tops', 'Camisas y blusas', 'Jerseys y sudaderas', 'Vestidos',
   'Faldas', 'Pantalones', 'Vaqueros', 'Chaquetas y abrigos', 'Ropa de deporte',
@@ -41,10 +42,65 @@ export const CATEGORIA_OPTIONS = [
   // Niños
   'Ropa niña', 'Ropa niño', 'Calzado niños', 'Accesorios niños',
 ] as const
-export type Categoria = (typeof CATEGORIA_OPTIONS)[number]
+
+// ─── Vinted France ────────────────────────────────────────────────────────
+// Mismos 5 niveles que en España — Vinted usa la misma escala de estado en
+// todos sus mercados, solo cambia el idioma de la etiqueta.
+const ESTADO_OPTIONS_FR = [
+  'Neuf avec étiquette',
+  'Neuf sans étiquette',
+  'Très bon état',
+  'Bon état',
+  'Satisfaisant',
+] as const
+
+// Misma estructura que CATEGORIA_OPTIONS_ES (mismo orden, mismo número de
+// categorías) para que MERCADOS[x].categoriaOptions[i] sea siempre "la misma
+// categoría" en ambos idiomas — evita que se desincronicen con el tiempo.
+const CATEGORIA_OPTIONS_FR = [
+  // Femme
+  'Tops et t-shirts', 'Chemises et blouses', 'Pulls et sweats', 'Robes',
+  'Jupes', 'Pantalons', 'Jeans', 'Vestes et manteaux', 'Vêtements de sport',
+  'Sous-vêtements', 'Maillots de bain', 'Tailleurs et ensembles', 'Chaussures femme',
+  'Sacs', 'Accessoires femme',
+  // Homme
+  'T-shirts', 'Chemises', 'Pulls et sweats homme', 'Pantalons homme',
+  'Jeans homme', 'Vestes et manteaux homme', 'Vêtements de sport homme',
+  'Chaussures homme', 'Accessoires homme',
+  // Enfants
+  'Vêtements fille', 'Vêtements garçon', 'Chaussures enfants', 'Accessoires enfants',
+] as const
+
+interface Mercado {
+  id: 'ES' | 'FR'
+  nombre: string   // para el selector de la interfaz, en español
+  idioma: string    // nombre del idioma en español, para instruir a la IA
+  estadoOptions: readonly string[]
+  categoriaOptions: readonly string[]
+}
+
+export const MERCADOS: Record<'ES' | 'FR', Mercado> = {
+  ES: {
+    id: 'ES', nombre: 'España', idioma: 'español',
+    estadoOptions: ESTADO_OPTIONS_ES, categoriaOptions: CATEGORIA_OPTIONS_ES,
+  },
+  FR: {
+    id: 'FR', nombre: 'Francia', idioma: 'francés',
+    estadoOptions: ESTADO_OPTIONS_FR, categoriaOptions: CATEGORIA_OPTIONS_FR,
+  },
+}
+export type MercadoId = keyof typeof MERCADOS
+export const MERCADO_IDS = Object.keys(MERCADOS) as MercadoId[]
+export const MERCADO_DEFAULT: MercadoId = 'ES'
+
+export function isMercadoId(value: unknown): value is MercadoId {
+  return typeof value === 'string' && Object.hasOwn(MERCADOS, value)
+}
 
 // Suggested values for the talla <datalist> — not a closed enum like the
 // others above, sellers can type anything the AI didn't already fill in.
+// Same numeric/letter scale in France as in Spain (both use EU sizing),
+// so this doesn't need a per-mercado variant.
 export const TALLA_OPTIONS = [
   // Letter sizes
   'XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL',

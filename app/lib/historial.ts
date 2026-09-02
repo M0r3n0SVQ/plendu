@@ -1,4 +1,4 @@
-import { DUDOSO_FIELDS } from './vintedOptions'
+import { DUDOSO_FIELDS, isMercadoId, MERCADO_DEFAULT, type MercadoId } from './vintedOptions'
 
 // Shared between the client (validating localStorage on load — it's still
 // "untrusted" input, a user or extension could have edited it directly) and
@@ -23,6 +23,9 @@ export interface SafeFicha {
   medidas?: string
   precio?: number
   camposDudosos: string[]
+  // Which Vinted market this ficha's estado/categoria values belong to —
+  // defaults to ES for entries saved before P1 (multi-mercado) existed.
+  mercado: MercadoId
 }
 
 export interface HistorialItem {
@@ -41,12 +44,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function sanitizeFicha(raw: unknown): SafeFicha | null {
   if (!isRecord(raw)) return null
-  const safe: SafeFicha = { camposDudosos: [] }
+  const safe: SafeFicha = { camposDudosos: [], mercado: MERCADO_DEFAULT }
   for (const f of FICHA_STRING_FIELDS) {
     if (typeof raw[f] === 'string') safe[f] = (raw[f] as string).slice(0, FICHA_FIELD_MAX_LEN)
   }
   if (typeof raw.medidas === 'string') safe.medidas = raw.medidas.slice(0, MEDIDAS_MAX_LEN)
   if (typeof raw.precio === 'number' && isFinite(raw.precio)) safe.precio = raw.precio
+  if (isMercadoId(raw.mercado)) safe.mercado = raw.mercado
   safe.camposDudosos = Array.isArray(raw.camposDudosos)
     ? raw.camposDudosos.filter((f): f is string => DUDOSO_FIELDS.includes(f))
     : []

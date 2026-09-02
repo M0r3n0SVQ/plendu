@@ -412,6 +412,14 @@ body::after {
   margin-bottom: 0.75rem;
 }
 
+/* ─── Mercado de venta ───────────────────── */
+.mercado-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1.1rem;
+}
+
 /* ─── Botón generar ──────────────────────── */
 .btn-generate {
   width: 100%;
