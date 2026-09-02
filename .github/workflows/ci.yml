@@ -50,25 +50,10 @@ jobs:
       - name: Build
         run: npm run build
 
-      # Lets the lighthouse job below reuse this exact build instead of
-      # recompiling from scratch — `next build` is the expensive step, and
-      # nothing about it differs between the two jobs. A single bare
-      # directory path (no exclusions/multiple entries) is deliberate: with
-      # more than one path, upload-artifact re-roots the archive at their
-      # least common ancestor, which would double-nest .next on download —
-      # not worth the risk for the ~300KB build cache this would trim.
-      - name: Upload build output
-        uses: actions/upload-artifact@v4
-        with:
-          name: next-build
-          path: .next
-          retention-days: 1
-
   lighthouse:
     name: Lighthouse
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: lint-and-build
     # Only PRs — a fresh preview isn't needed on every push to master, and
     # this is where a "design" change could quietly regress Core Web Vitals
     # or accessibility without anyone noticing.
@@ -90,11 +75,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Download build output
-        uses: actions/download-artifact@v4
-        with:
-          name: next-build
-          path: .next
+      - name: Build
+        run: npm run build
 
       - name: Run Lighthouse CI
         uses: treosh/lighthouse-ci-action@v12
