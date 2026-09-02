@@ -379,7 +379,10 @@ body::after {
   font-family: var(--font-mono);
   font-size: 0.6rem;
   letter-spacing: 0.12em;
-  color: var(--fg);
+  /* Fixed light color, not var(--fg) — same reasoning as the compressing
+     overlay above: .foto-overlay's gradient is always dark, but --fg flips
+     dark in light theme and would make this text hard to read against it. */
+  color: #f2ede4;
 }
 
 .foto-icon {
@@ -1030,6 +1033,8 @@ body::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   margin-bottom: 1rem;
 }
 .historial-title {
@@ -2039,7 +2044,11 @@ button:focus-visible,
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   border: 1px solid rgba(242, 237, 228, 0.18);
-  color: var(--fg2);
+  /* Fixed light color, not var(--fg2) — this button's background stays
+     dark in both themes (always-visible on mobile per the media query
+     below), but --fg2 flips to a medium-dark gray in light theme, cutting
+     contrast against the icon right when it matters most. */
+  color: #e8e3da;
   font-size: 0.55rem;
   cursor: pointer;
   display: flex;
@@ -2065,9 +2074,18 @@ button:focus-visible,
   opacity: 1 !important;
 }
 @media (max-width: 860px) {
-  /* Always show on touch devices */
+  /* Always show on touch devices, and a bit bigger than the desktop 22px —
+     a mouse pointer is precise, a fingertip on two adjacent circular
+     buttons (edit vs. remove!) isn't, and 22px is well under the ~44px
+     comfortable touch-target size. */
+  .foto-slot-buttons { gap: 0.45rem; }
   .foto-edit,
-  .foto-remove { opacity: 0.75; }
+  .foto-remove {
+    opacity: 0.75;
+    width: 30px;
+    height: 30px;
+    font-size: 0.7rem;
+  }
 }
 
 /* ─── Foto grid: drag-to-reorder hint ────── */
@@ -2153,6 +2171,11 @@ button:focus-visible,
   border-color: var(--accent-border);
   background: var(--accent-light);
   color: var(--accent);
+}
+@media (max-width: 860px) {
+  /* Same touch-target bump as .foto-edit/.foto-remove — 22px is fine for
+     a mouse but tight for a fingertip. */
+  .historial-sync-btn { width: 30px; height: 30px; font-size: 0.85rem; }
 }
 .sync-empty-link {
   margin-top: 1.5rem;
@@ -2244,7 +2267,11 @@ button:focus-visible,
   z-index: 1;
   border-radius: inherit;
   pointer-events: none;
-  color: var(--fg);
+  /* Fixed light color, not var(--fg) — this scrim stays dark in both
+     themes, but --fg flips dark in light theme, which made the spinner
+     (border-color: currentColor) nearly invisible against it. Same class
+     of bug as the state-2/state-3 generate button fixed earlier. */
+  color: #f2ede4;
 }
 .foto-compressing-overlay .spinner {
   width: 18px;
