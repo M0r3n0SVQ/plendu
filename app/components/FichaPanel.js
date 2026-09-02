@@ -217,6 +217,10 @@ export default function FichaPanel({
         <span className="ficha-model-tag" aria-label="Modelo: GPT-4o mini">GPT-4o mini</span>
       </div>
 
+      <p className="ficha-ai-notice">
+        Es un modelo de IA gratuito, se le puede escapar algo raro (un escudo, un logo, el tejido). Échale un ojo antes de publicar. Si el proyecto crece, podría haber un modelo mejor para cuentas de pago.
+      </p>
+
       <div className="ficha-divider" />
 
       {[

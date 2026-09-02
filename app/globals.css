@@ -459,7 +459,11 @@ body::after {
 }
 .btn-generate.state-2 {
   background: linear-gradient(135deg, #1a1a1a 0%, #222 100%);
-  color: var(--fg);
+  /* Fixed light text, not var(--fg) — this button's background stays
+     near-black in both themes, but --fg flips dark in light theme (for
+     normal text on the light page background), which would put dark
+     text on a dark button here and make it unreadable. */
+  color: #f2ede4;
   border: 1px solid var(--accent-border);
 }
 .btn-generate.state-2:hover:not(:disabled) {
@@ -469,7 +473,12 @@ body::after {
 }
 .btn-generate.state-3 {
   background: linear-gradient(135deg, var(--accent) 0%, #c9a864 100%);
-  color: var(--bg);
+  /* Fixed dark text, not var(--bg) — the gold gradient's second stop is
+     itself fixed (not theme-aware), and dark text stays readable across
+     both ends of it in either theme; var(--bg) flips to a light cream in
+     light theme and loses contrast against the lighter half of the
+     gradient (the same class of bug as state-2 above, just less total). */
+  color: #1a1714;
   border: 1px solid var(--accent);
   box-shadow: 0 4px 16px rgba(184,150,90,0.25);
   animation: state3Glow 2.8s ease-in-out infinite;
@@ -658,6 +667,16 @@ body::after {
   border-radius: var(--r-pill);
   padding: 0.22rem 0.65rem;
   font-weight: 500;
+}
+
+.ficha-ai-notice {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.02em;
+  line-height: 1.5;
+  color: var(--fg2);
+  opacity: 0.85;
+  margin: 0.6rem 0 0.75rem;
 }
 
 .ficha-divider {

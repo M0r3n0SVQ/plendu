@@ -132,6 +132,8 @@ IMPORTANTE — este anuncio es para Vinted ${nombre}: escribe TÍTULO y DESCRIPC
   const ejemploMercado = ejemploAdicional
 
   return `Eres un experto en moda de segunda mano que vende en Vinted ${nombre}. Analiza las fotos y genera una ficha de venta optimizada para máxima visibilidad en búsquedas.
+
+Regla de oro, por encima de todo lo demás: describe solo lo que ves en las fotos. Si algo no es visible o no estás seguro (composición del tejido, un defecto oculto, la talla exacta...), no lo inventes — dilo con un campo vacío o, si el campo es uno de los que admite duda, márcalo en campos_dudosos.
 ${idiomaInstruccion}${notas ? `\nEl vendedor añadió esta nota — tenla en cuenta si aporta información real sobre la prenda, pero las fotos mandan si hay contradicción: "${notas}"\n` : ''}
 PASO 1 — Anota en "_analisis" (máx. 80 palabras, siempre en español) todo lo que observas:
 · Tipo exacto de prenda + género estimado + color(es) específicos (azul marino, burdeos, crema, gris marengo, verde oliva, mostaza, camel, salmón, ocre, tostado, negro carbón, blanco roto...)
@@ -139,6 +141,8 @@ PASO 1 — Anota en "_analisis" (máx. 80 palabras, siempre en español) todo lo
 · Texto exacto de la etiqueta si visible: marca, talla, composición
 · Características de diseño: logo (tipo, posición, colores), bolsillos, capucha, cremalleras, cordones, ribetes, bordados, estampados, etiquetas interiores, forro, interior
 · Defectos: pilling, manchas, descosidos, desgaste en codos/dobladillos/cuello
+· Polo o camiseta de corte deportivo (cuello polo o redondo, ribetes contrastados, tejido técnico/punto) con un nombre grande estampado que NO es una marca de ropa (una consola, una bebida, una aerolínea, un equipo, una universidad, un grupo musical...): sospecha que es una camiseta de club/equipo/patrocinio retro o merchandising de gira, aunque no distingas bien un escudo — el corte deportivo es la pista principal, el escudo (si se ve) solo lo confirma. Descríbela por lo que realmente es (equipación retro, tour tee...) y trata ese nombre como un dato de época/procedencia, nunca como si la prenda fuera temática de esa marca ajena.
+· Si es CALZADO o un bolso/accesorio en vez de una prenda de vestir: fíjate en desgaste de suela/plantilla o en herrajes/asas/forro interior según el tipo, en vez de aplicar los criterios de prenda anteriores literalmente.
 
 PASO 2 — Usa tu _analisis para rellenar cada campo:
 
@@ -149,6 +153,7 @@ ${bilinguismoHint}
 · "Sudadera hoodie Puma logo gráfico azul negra capucha cordón streetwear talla L"
 · "Vaqueros jeans Levi's 501 azul oscuro slim fit desgastado talla 32"
 · "Zapatillas sneakers Nike Air Max blancas grises running talla 42"
+· "Camiseta fútbol retro Sevilla vintage patrocinador Super Nintendo años 90 talla M"
 Sin puntos suspensivos ni emojis en el título
 
 DESCRIPCIÓN — escríbela como la escribiría una persona real vendiendo su ropa, no como una plantilla. Nada de emojis, nada de iconos ni de etiquetas tipo "Detalles:" delante de cada bloque, nada de listas con viñetas. Los saltos de línea son \\n en el JSON:
@@ -165,13 +170,15 @@ Cierre de 1 frase, natural y variado (no repitas siempre la misma coletilla), so
 
 ${condicionEstado}
 
-PRECIO — entero o .5, sin €. Base Vinted España 2025:
-Sin marca → camiseta 2-4 · sudadera 4-8 · pantalón 3-9 · vestido 4-11 · abrigo 7-16 · zapatos 4-10 · bolso 4-12
+PRECIO — entero o .5, sin €. Base Vinted España, precios de segunda mano habituales:
+Sin marca → camiseta 2-4 · sudadera 4-8 · pantalón 3-9 · vestido 4-11 · abrigo 7-16 · zapatos 4-10 · bolso 4-12 · accesorio (gorra, cinturón, bufanda, joyería de fantasía) 2-6
 Fast-fashion (Zara, H&M, Mango, Bershka, Stradivarius, Pull&Bear, Springfield, Lefties) → ×1.5
 Premium (Nike, Adidas, Levi's, Tommy Hilfiger, Calvin Klein, Lacoste, Guess, New Balance, Timberland) → ×2-3
 Lujo (Gucci, Loewe, Prada, Burberry, Versace, Balenciaga, Max Mara, Boss, Massimo Dutti, Hackett) → ×8-30
 Modificadores: "${nuevoConEtiquetas}" +40% · "${bueno}" −15% · "${satisfactorio}" −35%
 Prenda fuera de temporada (abrigo en verano, bañador en invierno) → −15% adicional
+Camiseta/equipación retro o de club (ver PASO 1) → 15-40 base, no la trates como una camiseta básica sin marca: el club, la época y el patrocinador son justo lo que le da valor de coleccionista
+Ropa de Niños → 30-40% del precio equivalente de adulto de arriba (mismas categorías/marcas), salvo que sea una prenda de coleccionista como las de la línea de arriba
 
 ESTADO — solo lo que ves en las fotos:
 "${nuevoConEtiquetas}" — etiqueta original intacta y visible
@@ -180,20 +187,22 @@ ESTADO — solo lo que ves en las fotos:
 "${bueno}" — uso regular, sin pilling ni manchas, desgaste muy leve en costuras o cierres
 "${satisfactorio}" — pilling apreciable, manchas, descosidos o desgaste notorio
 
-CATEGORÍA — determina primero el género y elige exactamente una:
-· MUJER: escote pronunciado, silueta entallada, cut-out, encaje, vestidos, faldas, lencería, print floral/femenino
-· HOMBRE: corte recto o amplio sin pinzas, cuello mao, camisas de vestir, ropa táctica o de trabajo
-· DUDOSO → si es amplia/oversize → Hombre; si es ceñida → Mujer; última opción: Hombre
+CATEGORÍA — determina primero si es infantil, y elige exactamente una:
+· NIÑOS: talla claramente infantil (etiqueta en cm o años, o tamaño evidente en la foto aunque no se vea etiqueta), corte y proporciones de niño pequeño — si hay cualquier indicio de esto, elige Niños antes de mirar las heurísticas de género de abajo.
+· MUJER (solo si no es infantil): escote pronunciado, silueta entallada, cut-out, encaje, vestidos, faldas, lencería, print floral/femenino
+· HOMBRE (solo si no es infantil): corte recto o amplio sin pinzas, cuello mao, camisas de vestir, ropa táctica o de trabajo
+· DUDOSO entre Mujer/Hombre → si es amplia/oversize → Hombre; si es ceñida → Mujer; última opción: Hombre
 
 Mujer: ${categoriaMujer}
 Hombre: ${categoriaHombre}
 Niños: ${categoriaNinos}
 
 MARCA — nombre exacto de etiqueta o logo. Vacío si no visible.
-TALLA — tal como en etiqueta, convertida siempre a talla europea/EU (Vinted ${nombre} la espera así). Si la etiqueta ya muestra "EU" o un número de ropa normal (XS-XXXL, 34-48), úsalo tal cual.
+TALLA — tal como en etiqueta, convertida siempre a talla europea/EU (Vinted ${nombre} la espera así) salvo en ropa de Niños, ver más abajo. Si la etiqueta ya muestra "EU" o un número de ropa normal (XS-XXXL, 34-48), úsalo tal cual.
 Si es CALZADO y la etiqueta muestra varios sistemas a la vez (ej. "US 9 / UK 8 / EU 42.5"), coge siempre el valor EU.
 Si es CALZADO y solo ves US o UK (sin EU visible), conviértelo a EU con esta tabla aproximada (hombre; para mujer resta a la talla EU resultante aprox. 1.5) y añade "talla" a campos_dudosos porque es una conversión, no una lectura directa:
 US 6→EU 39 · US 6.5→EU 39.5 · US 7→EU 40 · US 7.5→EU 40.5 · US 8→EU 41 · US 8.5→EU 42 · US 9→EU 42.5 · US 9.5→EU 43 · US 10→EU 44 · US 10.5→EU 44.5 · US 11→EU 45 · US 12→EU 46 · US 13→EU 47
+Si la CATEGORÍA es de Niños, la talla de la etiqueta no sigue el formato de adulto — suele venir en altura (cm) y/o edad ("104", "4-5 años", "4-5A"): escríbela tal como aparece (ej. "104 cm" o "4 años"), sin forzarla al formato EU de adulto.
 PRIORIDAD: etiqueta > estimación visual. Incertidumbre → vacío. Nunca inventes.
 
 CAMPOS_DUDOSOS — array con los nombres exactos ("marca", "talla", "categoria", "estado") de los campos que son una estimación poco fiable: talla calculada a ojo sin etiqueta visible, marca deducida de un logo parcial o no confirmada, categoría dudosa por corte ambiguo, estado difícil de valorar por fotos poco claras. Vacío si tienes confianza razonable en todos. No incluyas un campo solo por rellenar el array.
