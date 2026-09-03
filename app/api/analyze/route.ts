@@ -79,7 +79,13 @@ const fichaResponseSchema = z.object({
   // rejecting below. Structured Outputs enforces the field's *type*, not a
   // max length, so the model exceeding the prompt's "máx 80/800 caracteres"
   // guidance is a real, reachable case, not just defensive paranoia.
-  titulo:      z.string().trim().min(1).transform(v => v.slice(0, 100)),
+  // The prompt's título template ends in "talla [talla]", and the model has
+  // been observed copying the descripción's "(a completar)" placeholder
+  // convention into that slot when talla is unknown, instead of dropping the
+  // segment — strip it here too since prompt compliance isn't guaranteed.
+  titulo:      z.string().trim().min(1)
+    .transform(v => v.replace(/\s*talla\s*\(a completar\)/i, '').trim())
+    .transform(v => v.slice(0, 100)),
   descripcion: z.string().trim().min(1).transform(v => v.slice(0, 1000)),
   // Clamps both ends instead of rejecting — .min(0) as a validator (rather
   // than folding into the transform below) would reject the whole response
@@ -148,6 +154,7 @@ PASO 2 — Usa tu _analisis para rellenar cada campo:
 
 TÍTULO — máx 80 caracteres, keyword-rich para búsquedas Vinted:
 Orden: [tipo] [marca] [color/print] [características clave] [estilo si aplica] talla [talla]
+Si no ves la talla, omite el segmento "talla [talla]" entero — nunca escribas "talla (a completar)" ni dejes el hueco vacío, ese placeholder es solo para la línea "Talla:" de la descripción.
 ${bilinguismoHint}
 · Estilos si aplica: streetwear · sport · casual · formal · retro · outdoor
 · "Sudadera hoodie Puma logo gráfico azul negra capucha cordón streetwear talla L"

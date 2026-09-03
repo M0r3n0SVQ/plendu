@@ -303,6 +303,27 @@ describe('POST /api/analyze — happy path (mocked OpenAI)', () => {
     expect(body.precio).toBe(0)
   })
 
+  it('strips a leaked "talla (a completar)" placeholder out of the titulo', async () => {
+    createMock.mockResolvedValueOnce({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            _analisis: 'x',
+            titulo: 'Chaqueta denim azul claro clásica con bolsillos talla (a completar)',
+            descripcion: 'y', precio: 1,
+            categoria: 'Camisetas y tops', estado: 'Bueno', marca: '', talla: '',
+            campos_dudosos: [], alerta: '',
+          }),
+        },
+      }],
+    })
+    const req = makeRequest({ fotos: { principal: validFoto } })
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.titulo).toBe('Chaqueta denim azul claro clásica con bolsillos')
+  })
+
   it('truncates an over-length titulo/descripcion instead of rejecting the whole response', async () => {
     createMock.mockResolvedValueOnce({
       choices: [{

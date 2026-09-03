@@ -6,6 +6,13 @@ App para generar fichas de Vinted a partir de fotos. Subes hasta 4 imágenes de 
 
 Web: [plendu.app](https://plendu.vercel.app/)
 
+<p align="center">
+  <img src="docs/screenshots/desktop.png" alt="Plendu en escritorio: subida de fotos a la izquierda, ficha generada por IA a la derecha" width="800">
+</p>
+<p align="center">
+  <img src="docs/screenshots/mobile.png" alt="Plendu en móvil: ficha generada con título, descripción y precio" width="260">
+</p>
+
 ## Cómo funciona
 
 Las fotos se redimensionan y comprimen en el navegador antes de enviarse. La API solo las pasa a OpenAI durante el análisis, no las guarda. El historial de las últimas 10 fichas se queda en `localStorage`, con editor de fotos (recortar/rotar) integrado.
