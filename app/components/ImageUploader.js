@@ -22,7 +22,12 @@ const SLOTS = [
   { key: 'detalle',   label: 'Detalle',   icon: '◎', required: false, hint: 'primer plano',  gridClass: 'slot-secondary' },
 ]
 
-const MAX_MB = 5
+// Raw file, before compression — not the same limit as the API's per-image
+// cap (route.ts's MAX_BASE64_LEN), which applies to the ~100-200KB output
+// compressImage() produces, not to what the user picks from their camera
+// roll. Modern phone photos routinely land in the 8-15MB range, so a tight
+// cap here was rejecting normal camera shots before compression even ran.
+const MAX_MB = 20
 const ALLOWED = ['image/jpeg', 'image/png', 'image/webp']
 const MERCADO_KEY = 'plendu_mercado'
 
