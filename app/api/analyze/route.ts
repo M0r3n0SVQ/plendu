@@ -163,7 +163,7 @@ ${bilinguismoHint}
 · "Camiseta fútbol retro Sevilla vintage patrocinador Super Nintendo años 90 talla M"
 Sin puntos suspensivos ni emojis en el título
 
-DESCRIPCIÓN — escríbela como la escribiría una persona real vendiendo su ropa, no como una plantilla. Nada de emojis, nada de iconos ni de etiquetas tipo "Detalles:" delante de cada bloque, nada de listas con viñetas. Los saltos de línea son \\n en el JSON:
+DESCRIPCIÓN — escríbela como la escribiría una persona real vendiendo su ropa, no como una plantilla. Nada de emojis, nada de iconos ni de etiquetas tipo "Detalles:" delante de cada bloque, nada de listas con viñetas. Evita también muletillas de anuncio genérico como "ideal para", "perfecto para combinar con cualquier look/outfit", "versátil", "atemporal" o "no dudarás en": son frases de plantilla, no de un vendedor real. Los saltos de línea son \\n en el JSON:
 
 Primera línea: 1-2 frases naturales presentando la prenda (tipo, marca si hay, color y el rasgo que más destaque). No la escribas como ficha técnica ("Tipo – Marca – rasgo"), escríbela como una frase corriente.
 [línea vacía]
@@ -173,7 +173,7 @@ Estado: [estado en minúscula], [condición en 4-6 palabras]
 Talla: [talla o "(a completar)" si no visible]
 Medidas en plano: (a completar)
 [línea vacía]
-Cierre de 1 frase, natural y variado (no repitas siempre la misma coletilla), sobre envío o disponibilidad para preguntas.
+Cierre de 1 frase, natural y variado, sobre envío o disponibilidad para preguntas. Varía también cómo empieza la frase, no solo el final: "Envío en 24-48h", "Lo mando rápido", "Cualquier duda, pregunta" y similares son puntos de partida distintos, no una fórmula fija que repetir en cada ficha.
 
 ${condicionEstado}
 
@@ -220,10 +220,10 @@ ALERTA — string vacía salvo que veas uno de estos dos casos, en cuyo caso res
 No marques nada por precaución si no hay un indicio claro — evita falsos positivos, la mayoría de fichas no deberían llevar alerta.
 
 EJEMPLO 1 (streetwear con marca y etiqueta visible):
-{"_analisis":"Nike logo bordado en pecho. Felpa negra con capucha. Etiqueta: Nike, M. Bolsillo canguro. Cordón negro. Ribetes canalé en puños y bajo. Interior afelpado. Sin pilling ni manchas.","titulo":"Sudadera hoodie Nike logo bordado negra capucha cordón sport streetwear talla M","descripcion":"Sudadera Nike con capucha en negro, con el logo bordado en el pecho y capucha con cordón ajustable.\\n\\nTiene bolsillo canguro delantero y el interior es de felpa suave, muy calentita. Puños y bajo con ribete canalé.\\n\\nEstado: muy bueno, sin manchas ni desperfectos\\nTalla: M\\nMedidas en plano: (a completar)\\n\\nEnvío en 24-48h, cualquier duda pregunta sin problema.","precio":20,"categoria":"Jerseys y sudaderas hombre","estado":"Muy bueno","marca":"Nike","talla":"M","campos_dudosos":[],"alerta":""}
+{"_analisis":"Nike logo bordado en pecho. Felpa negra con capucha. Etiqueta: Nike, M. Bolsillo canguro. Cordón negro. Ribetes canalé en puños y bajo. Interior afelpado. Sin pilling ni manchas.","titulo":"Sudadera hoodie Nike logo bordado negra capucha cordón sport streetwear talla M","descripcion":"Sudadera Nike con capucha en negro, con el logo bordado en el pecho y capucha con cordón ajustable.\\n\\nTiene bolsillo canguro delantero y el interior es de felpa suave, muy calentita. Puños y bajo con ribete canalé.\\n\\nEstado: muy bueno, sin manchas ni desperfectos\\nTalla: M\\nMedidas en plano: (a completar)\\n\\nSi tienes dudas pregunta sin problema, lo envío en 24-48h.","precio":20,"categoria":"Jerseys y sudaderas hombre","estado":"Muy bueno","marca":"Nike","talla":"M","campos_dudosos":[],"alerta":""}
 
 EJEMPLO 2 (vestido sin marca ni etiqueta visible — nótese que "talla" lleva una estimación Y aparece en campos_dudosos a la vez):
-{"_analisis":"Vestido midi verde oliva, tirantes finos, escote cruzado. Tejido satinado fluido, cae bien. Sin etiqueta visible. Cremallera lateral oculta. Sin manchas ni enganches.","titulo":"Vestido midi verde oliva satinado tirantes escote cruzado talla M","descripcion":"Vestido midi verde oliva con tirantes finos y escote cruzado que estiliza mucho. El tejido es satinado y cae genial, sin arrugas raras.\\n\\nCierre de cremallera oculta en el lateral. Perfecto para una cena o evento, aunque también se puede llevar más casual con una chaqueta encima.\\n\\nEstado: nuevo sin etiquetas, sin uso aparente\\nTalla: M\\nMedidas en plano: (a completar)\\n\\nEnvío en 24-48h, escríbeme si tienes dudas.","precio":9,"categoria":"Vestidos","estado":"Nuevo sin etiquetas","marca":"","talla":"M","campos_dudosos":["talla"],"alerta":""}${ejemploMercado}
+{"_analisis":"Vestido midi verde oliva, tirantes finos, escote cruzado. Tejido satinado fluido, cae bien. Sin etiqueta visible. Cremallera lateral oculta. Sin manchas ni enganches.","titulo":"Vestido midi verde oliva satinado tirantes escote cruzado talla M","descripcion":"Vestido midi verde oliva con tirantes finos y escote cruzado que estiliza mucho. El tejido es satinado y cae genial, sin arrugas raras.\\n\\nCierre de cremallera oculta en el lateral. Se puede llevar tanto para una cena o un evento como en plan más casual con una chaqueta encima.\\n\\nEstado: nuevo sin etiquetas, sin uso aparente\\nTalla: M\\nMedidas en plano: (a completar)\\n\\nEnvío en 24-48h, escríbeme si tienes dudas.","precio":9,"categoria":"Vestidos","estado":"Nuevo sin etiquetas","marca":"","talla":"M","campos_dudosos":["talla"],"alerta":""}${ejemploMercado}
 
 Responde SOLO con JSON válido: {"_analisis":"","titulo":"","descripcion":"","precio":0,"categoria":"","estado":"","marca":"","talla":"","campos_dudosos":[],"alerta":""}`
 }

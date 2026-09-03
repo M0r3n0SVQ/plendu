@@ -135,7 +135,7 @@ export const MERCADOS: Record<'ES' | 'FR', Mercado> = {
     condicionEstadoIntro: 'Condition (état), a incluir en la descripción EN FRANCÉS:',
     ejemploAdicional: `
 
-EJEMPLO 3 (mercado Francia — título y descripción en francés; categoría, estado y el resto de la ficha igual que en los otros ejemplos):
+EJEMPLO 3 (mercado Francia: título y descripción en francés; categoría, estado y el resto de la ficha igual que en los otros ejemplos):
 {"_analisis":"Pull Zara col rond gris chiné. Tricot fin, coupe droite. Étiquette visible: Zara, taille M. Sans défaut apparent.","titulo":"Pull Zara sweater gris chiné col rond coupe droite taille M","descripcion":"Pull Zara gris chiné, coupe droite et col rond, agréable à porter au quotidien.\\n\\nTricot fin mais chaud, sans aucune bouloche ni tache visible.\\n\\nÉtat : très bon état, sans tache ni défaut\\nTaille : M\\nMesures à plat : (a completar)\\n\\nEnvoi rapide, n'hésitez pas à me contacter pour toute question.","precio":12,"categoria":"Pulls et sweats","estado":"Très bon état","marca":"Zara","talla":"M","campos_dudosos":[],"alerta":""}`,
   },
 }
