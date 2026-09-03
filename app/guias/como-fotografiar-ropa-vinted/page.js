@@ -89,10 +89,10 @@ export default function GuiaFotos() {
       <section className="legal-section">
         <h2 className="legal-h2">Qué fotos incluir</h2>
         <ul className="legal-list">
-          <li><strong>Frontal completa</strong> — la que decide si alguien entra al anuncio. Prenda entera, encuadre recto, sin ángulos raros que la deformen.</li>
-          <li><strong>Trasera</strong> — muchos compradores buscan corte o largo por detrás antes de preguntar nada.</li>
-          <li><strong>Etiqueta</strong> — marca y talla en una sola foto legible. Es el dato que más preguntas evita.</li>
-          <li><strong>Detalle de cualquier defecto</strong> — una mancha, un enganchón, un botón flojo. Enseñarlo de cerca no ahuyenta compradores, evita disputas y devoluciones después.</li>
+          <li><strong>Frontal completa</strong>: la que decide si alguien entra al anuncio. Prenda entera, encuadre recto, sin ángulos raros que la deformen.</li>
+          <li><strong>Trasera</strong>: muchos compradores buscan corte o largo por detrás antes de preguntar nada.</li>
+          <li><strong>Etiqueta</strong>: marca y talla en una sola foto legible. Es el dato que más preguntas evita.</li>
+          <li><strong>Detalle de cualquier defecto</strong>: una mancha, un enganchón, un botón flojo. Enseñarlo de cerca no ahuyenta compradores, evita disputas y devoluciones después.</li>
         </ul>
         <p>
           Para calzado añade una foto de la suela: es lo primero que mira

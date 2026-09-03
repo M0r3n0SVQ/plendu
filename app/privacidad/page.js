@@ -82,7 +82,7 @@ export default function Privacidad() {
               <strong>Analítica de uso:</strong> usamos Vercel Analytics para
               saber cuántas visitas recibe Plendu y qué páginas se usan más.
               No usa cookies, no guarda tu IP y no te identifica de forma
-              individual — solo agrega estadísticas (visitas, país
+              individual, solo agrega estadísticas (visitas, país
               aproximado, tipo de dispositivo). Más info en{' '}
               <a href="https://vercel.com/docs/analytics/privacy-policy" target="_blank" rel="noopener noreferrer">
                 la política de privacidad de Vercel Analytics

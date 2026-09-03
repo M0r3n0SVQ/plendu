@@ -60,10 +60,10 @@ export default function GuiaPrecio() {
           prenda usada diez veces, por buena que esté. Como referencia rápida:
         </p>
         <ul className="legal-list">
-          <li><strong>Nuevo con etiquetas</strong> — entre el 50% y el 70% del precio original, según cuánto tiempo lleve sin venderse en tienda.</li>
-          <li><strong>Nuevo sin etiquetas / muy bueno</strong> — entre el 30% y el 50%.</li>
-          <li><strong>Bueno, con señales de uso normal</strong> — entre el 15% y el 30%.</li>
-          <li><strong>Satisfactorio, con algún defecto visible</strong> — por debajo del 15%, y siempre mencionando el defecto en el anuncio.</li>
+          <li><strong>Nuevo con etiquetas</strong>: entre el 50% y el 70% del precio original, según cuánto tiempo lleve sin venderse en tienda.</li>
+          <li><strong>Nuevo sin etiquetas / muy bueno</strong>: entre el 30% y el 50%.</li>
+          <li><strong>Bueno, con señales de uso normal</strong>: entre el 15% y el 30%.</li>
+          <li><strong>Satisfactorio, con algún defecto visible</strong>: por debajo del 15%, y siempre mencionando el defecto en el anuncio.</li>
         </ul>
         <p>
           Son rangos orientativos, no una tabla fija: una marca muy buscada

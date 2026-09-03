@@ -54,20 +54,20 @@ export default function GuiaMedidas() {
       <section className="legal-section">
         <h2 className="legal-h2">Camisetas, camisas y jerséis</h2>
         <ul className="legal-list">
-          <li><strong>Pecho</strong> — de axila a axila, en línea recta por debajo de las mangas. Si quieres dar el contorno completo, multiplica por dos.</li>
-          <li><strong>Largo</strong> — desde el punto más alto del hombro hasta el borde inferior.</li>
-          <li><strong>Hombros</strong> — de una costura de hombro a la otra, por la parte de atrás.</li>
-          <li><strong>Manga</strong> — desde la costura del hombro hasta el final del puño.</li>
+          <li><strong>Pecho</strong>: de axila a axila, en línea recta por debajo de las mangas. Si quieres dar el contorno completo, multiplica por dos.</li>
+          <li><strong>Largo</strong>: desde el punto más alto del hombro hasta el borde inferior.</li>
+          <li><strong>Hombros</strong>: de una costura de hombro a la otra, por la parte de atrás.</li>
+          <li><strong>Manga</strong>: desde la costura del hombro hasta el final del puño.</li>
         </ul>
       </section>
 
       <section className="legal-section">
         <h2 className="legal-h2">Pantalones y faldas</h2>
         <ul className="legal-list">
-          <li><strong>Cintura</strong> — de lado a lado por la parte más estrecha, sin estirar la tela.</li>
-          <li><strong>Cadera</strong> — de lado a lado por la parte más ancha, normalmente unos 20 cm por debajo de la cintura.</li>
-          <li><strong>Largo</strong> — desde la cinturilla hasta el bajo, por el lateral.</li>
-          <li><strong>Entrepierna (solo pantalones)</strong> — desde la unión de las perneras hasta el final de la pernera.</li>
+          <li><strong>Cintura</strong>: de lado a lado por la parte más estrecha, sin estirar la tela.</li>
+          <li><strong>Cadera</strong>: de lado a lado por la parte más ancha, normalmente unos 20 cm por debajo de la cintura.</li>
+          <li><strong>Largo</strong>: desde la cinturilla hasta el bajo, por el lateral.</li>
+          <li><strong>Entrepierna (solo pantalones)</strong>: desde la unión de las perneras hasta el final de la pernera.</li>
         </ul>
       </section>
 
