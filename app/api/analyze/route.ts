@@ -86,7 +86,15 @@ const fichaResponseSchema = z.object({
   titulo:      z.string().trim().min(1)
     .transform(v => v.replace(/\s*talla\s*\(a completar\)/i, '').trim())
     .transform(v => v.slice(0, 100)),
-  descripcion: z.string().trim().min(1).transform(v => v.slice(0, 1000)),
+  // "ideal para X" / "perfecto/a para X" is the single most common generic-ad
+  // phrase the model reaches for despite the prompt explicitly banning it
+  // (confirmed reachable across repeated real tests, not just theoretical) —
+  // it's consistently a trailing ", ideal para ..." clause right before the
+  // sentence's period, so stripping the clause leaves a grammatically clean
+  // sentence behind instead of a dangling fragment.
+  descripcion: z.string().trim().min(1)
+    .transform(v => v.replace(/,\s*(ideal|perfecto|perfecta)\s+para\s+[^.\n]*(?=[.\n]|$)/gi, ''))
+    .transform(v => v.slice(0, 1000)),
   // Clamps both ends instead of rejecting — .min(0) as a validator (rather
   // than folding into the transform below) would reject the whole response
   // on a negative value, same asymmetric-reject bug the truncate comments
@@ -163,7 +171,14 @@ ${bilinguismoHint}
 · "Camiseta fútbol retro Sevilla vintage patrocinador Super Nintendo años 90 talla M"
 Sin puntos suspensivos ni emojis en el título
 
-DESCRIPCIÓN — escríbela como la escribiría una persona real vendiendo su ropa, no como una plantilla. Nada de emojis, nada de iconos ni de etiquetas tipo "Detalles:" delante de cada bloque, nada de listas con viñetas. Evita también muletillas de anuncio genérico como "ideal para", "perfecto para combinar con cualquier look/outfit", "versátil", "atemporal" o "no dudarás en": son frases de plantilla, no de un vendedor real. Los saltos de línea son \\n en el JSON:
+DESCRIPCIÓN — escríbela como la escribiría una persona real vendiendo su ropa, no como una plantilla. Nada de emojis, nada de iconos ni de etiquetas tipo "Detalles:" delante de cada bloque, nada de listas con viñetas. Los saltos de línea son \\n en el JSON:
+
+PROHIBIDO usar estas frases hechas, por muy bien que encajen: son la muletilla número uno de cualquier texto escrito por IA, y se te escapan constantemente si no las vigilas activamente en cada frase que escribas.
+· "ideal para" / "perfecto/a para" (combinar con cualquier look, outfit, ocasión, temporada...)
+· "versátil", "atemporal"
+· "no dudarás en", "no dudes en" (fuera del cierre sobre envío)
+· "mantenerte cálido/caliente" (es "keep you warm" traducido; di que abriga bien, que es calentito, o que no vas a pasar frío)
+Antes de dar la descripción por buena, relee cada frase y comprueba que ninguna de estas cuatro aparece — si se te ha colado alguna, reescribe esa frase entera de otra forma.
 
 Primera línea: 1-2 frases naturales presentando la prenda (tipo, marca si hay, color y el rasgo que más destaque). No la escribas como ficha técnica ("Tipo – Marca – rasgo"), escríbela como una frase corriente.
 [línea vacía]

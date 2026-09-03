@@ -324,6 +324,28 @@ describe('POST /api/analyze — happy path (mocked OpenAI)', () => {
     expect(body.titulo).toBe('Chaqueta denim azul claro clásica con bolsillos')
   })
 
+  it('strips a leaked "ideal/perfecto para" generic-ad clause out of the descripcion', async () => {
+    createMock.mockResolvedValueOnce({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            _analisis: 'x',
+            titulo: 'x',
+            descripcion: 'El tejido es de punto suave, ideal para el día a día.\n\nOtra frase normal, perfecta para nada en especial.',
+            precio: 1,
+            categoria: 'Camisetas y tops', estado: 'Bueno', marca: '', talla: '',
+            campos_dudosos: [], alerta: '',
+          }),
+        },
+      }],
+    })
+    const req = makeRequest({ fotos: { principal: validFoto } })
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.descripcion).toBe('El tejido es de punto suave.\n\nOtra frase normal.')
+  })
+
   it('truncates an over-length titulo/descripcion instead of rejecting the whole response', async () => {
     createMock.mockResolvedValueOnce({
       choices: [{
