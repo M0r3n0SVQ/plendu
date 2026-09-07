@@ -50,7 +50,6 @@ Para desplegar: importa el repo en [vercel.com/new](https://vercel.com/new), añ
 
 ## Roadmap
 
-Cosas que iré haciendo cuando me apetezca.
 
 - [x] Segundo mercado (Francia) además de España
 - [x] Sincronización de historial entre dispositivos, sin cuenta
