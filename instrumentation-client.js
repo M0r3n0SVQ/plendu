@@ -19,6 +19,10 @@ if (dsn) {
       'Load failed',
       // Service worker registration warnings
       'SW registration failed',
+      // Crypto wallet browser extensions (MetaMask etc.) inject a provider
+      // into every page a visitor loads — this app has no web3 code, so
+      // any EIP-1193 provider error is the extension's own noise, not ours.
+      'provider is disconnected from all chains',
     ],
   })
 }
